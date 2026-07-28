@@ -41,7 +41,7 @@ export function useCloseCashSession() {
 export function useCashMovements(cashSessionId: string | undefined) {
   return useQuery({
     queryKey: ['cash_movements', cashSessionId],
-    queryFn: () => fs.getWhere<CashMovement>(MOV_COL, 'cashSessionId', '==', cashSessionId),
+    queryFn: () => fs.getWhere<CashMovement>(MOV_COL, 'cashSessionId', '==', cashSessionId!),
     enabled: !!cashSessionId,
   });
 }

@@ -27,6 +27,7 @@ import {
   ShoppingBag,
 } from 'lucide-react';
 import { usePOSStore } from '../store/usePOSStore';
+import { useCustomers } from '../../../hooks/useCustomers';
 
 interface POSTicketPanelProps {
   onOpenSuspendedModal: () => void;
@@ -47,6 +48,7 @@ export const POSTicketPanel: React.FC<POSTicketPanelProps> = ({ onOpenSuspendedM
     selectedItemIndex,
     setSelectedItemIndex,
   } = usePOSStore();
+  const { data: customers = [] } = useCustomers();
 
   const subtotal = cart.reduce((acc, item) => acc + item.subtotal, 0);
   const taxTotal = cart.reduce((acc, item) => acc + item.tax, 0);
@@ -122,12 +124,12 @@ export const POSTicketPanel: React.FC<POSTicketPanelProps> = ({ onOpenSuspendedM
             fullWidth
             value={customer.id}
             onChange={(e) => {
-              const selected = mockCustomers.find((c) => c.id === e.target.value);
+              const selected = customers.find((c) => c.id === e.target.value);
               if (selected) setCustomer(selected);
             }}
             sx={{ borderRadius: 2.5, fontSize: '1rem', fontWeight: 700, height: 48, bgcolor: '#FFFFFF' }}
           >
-            {mockCustomers.map((c) => (
+            {customers.map((c) => (
               <MenuItem key={c.id} value={c.id} sx={{ fontSize: '1rem', fontWeight: 600 }}>
                 👤 {c.name} {c.taxId ? `(${c.taxId})` : ''}
               </MenuItem>

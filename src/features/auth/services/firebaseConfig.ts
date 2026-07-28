@@ -22,5 +22,10 @@ export const db = getFirestore(app);
 
 // Initialize Analytics conditionally for SSR/Environment safety
 export const analyticsPromise = isSupported()
-  .then((supported) => (supported ? getAnalytics(app).catch(() => null) : null))
+  .then(async (supported) => {
+    if (supported) {
+      try { return getAnalytics(app); } catch { return null; }
+    }
+    return null;
+  })
   .catch(() => null);

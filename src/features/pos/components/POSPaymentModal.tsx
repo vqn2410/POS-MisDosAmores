@@ -33,7 +33,6 @@ import { useCreateSale } from '../../../hooks/useSales';
 import { getNextTicketNumber } from '../../../services/ticketCounterService';
 import { MercadoPagoClient } from '../../../mercadoPago/MercadoPagoClient';
 import { CuentaDniPaymentProvider, type CuentaDniPaymentResult } from '../../payments/providers/CuentaDniPaymentProvider';
-import { FiscalizationPolicyService } from '../../billing/services/FiscalizationPolicyService';
 import { FiscalRulesEngine } from '../../billing/services/FiscalRulesEngine';
 import { MercadoPagoLogo } from '../../../components/common/MercadoPagoLogo';
 import { CuentaDniLogo } from '../../../components/common/CuentaDniLogo';
@@ -176,9 +175,6 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
     try {
       const ticketNumber = await getNextTicketNumber();
       const primaryMethod = selectedMethod === 'MERCADOPAGO' ? 'MERCADOPAGO_QR' : selectedMethod === 'CUENTA_DNI' ? 'CUENTA_DNI' : selectedMethod;
-      const currentStatus = selectedMethod === 'MERCADOPAGO' ? (mpStatus === 'APPROVED' ? 'APPROVED' : 'PENDING') : selectedMethod === 'CUENTA_DNI' ? (cdniPayment?.status || 'PENDING') : 'APPROVED';
-
-      const shouldFiscalize = FiscalizationPolicyService.shouldFiscalize(primaryMethod, currentStatus);
 
       let fiscalEvaluation;
       try {

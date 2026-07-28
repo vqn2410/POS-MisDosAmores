@@ -79,7 +79,7 @@ export const POSProductGrid: React.FC = () => {
       }
 
       // 2. Exact or fuzzy match for product
-      const exactMatch = mockProducts.find((p) => p.barcode === trimmed || p.sku.toLowerCase() === trimmed.toLowerCase());
+      const exactMatch = products.find((p) => p.barcode === trimmed || p.sku.toLowerCase() === trimmed.toLowerCase());
       const targetProduct = exactMatch || (filteredProducts.length > 0 ? filteredProducts[0] : null);
 
       if (targetProduct) {

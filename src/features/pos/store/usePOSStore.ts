@@ -417,6 +417,7 @@ export const usePOSStore = create<POSState>((set, get) => ({
     const grandTotal = cart.reduce((acc, item) => acc + item.total, 0);
 
     const newSale: Sale = {
+      id: '',
       ticketNumber,
       branchId: authState.activeBranch?.id || 'br-01',
       branchName: authState.activeBranch?.name || 'Sucursal Principal',

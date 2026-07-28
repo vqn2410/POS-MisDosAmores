@@ -54,7 +54,6 @@ export const POSView: React.FC = () => {
     clearCart,
     suspendSale,
     openPaymentModal,
-    closePaymentModal,
     isPaymentModalOpen,
     payments,
     selectedItemIndex,

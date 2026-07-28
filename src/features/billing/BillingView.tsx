@@ -19,7 +19,7 @@ import {
   DialogActions,
   CircularProgress,
 } from '@mui/material';
-import { Download, CheckCircle2, Sliders, ShieldCheck, Receipt, XCircle } from 'lucide-react';
+import { Download, CheckCircle2, Sliders, Receipt, XCircle } from 'lucide-react';
 import { FiscalRulesEngine, type ReceiptType } from './services/FiscalRulesEngine';
 import { useSales, useUpdateSale } from '../../hooks/useSales';
 import { useUpdateProduct } from '../../hooks/useProducts';

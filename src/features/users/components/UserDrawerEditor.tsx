@@ -16,7 +16,7 @@ import {
 } from '@mui/material';
 import { X as CloseIcon, Save, User as UserIcon, KeyRound } from 'lucide-react';
 import type { User, RoleType } from '../../../types';
-import { useCreateUser, useUpdateUser } from '../../../hooks/useUsers';
+import { useUpdateUser } from '../../../hooks/useUsers';
 import { useQueryClient } from '@tanstack/react-query';
 import { createFirebaseUser } from '../../auth/services/firebaseAuthService';
 import { useNotificationStore } from '../../../store/useNotificationStore';
@@ -59,7 +59,6 @@ const ROLES: { value: RoleType; label: string }[] = [
 ];
 
 export const UserDrawerEditor: React.FC<UserDrawerEditorProps> = ({ user, open, onClose }) => {
-  const createUser = useCreateUser();
   const updateUser = useUpdateUser();
   const queryClient = useQueryClient();
   const { addNotification } = useNotificationStore();
