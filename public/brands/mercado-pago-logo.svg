@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 50" width="200" height="50">
+  <rect width="200" height="50" rx="8" fill="#009EE3"/>
+  <path d="M35 15C29.4772 15 25 19.4772 25 25C25 30.5228 29.4772 35 35 35C40.5228 35 45 30.5228 45 25C45 19.4772 40.5228 15 35 15ZM35 31C31.6863 31 29 28.3137 29 25C29 21.6863 31.6863 19 35 19C38.3137 19 41 21.6863 41 25C41 28.3137 38.3137 31 35 31Z" fill="#FFFFFF"/>
+  <text x="55" y="32" font-family="Arial, Helvetica, sans-serif" font-weight="bold" font-size="18" fill="#FFFFFF">mercado pago</text>
+</svg>

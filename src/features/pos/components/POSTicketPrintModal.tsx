@@ -1,0 +1,160 @@
+import React from 'react';
+import { Dialog, DialogTitle, DialogContent, DialogActions, Button, Box, Typography, Divider } from '@mui/material';
+import { Printer, CheckCircle } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
+import type { Sale } from '../../../types';
+import { useCompany } from '../../../hooks/useCompany';
+
+interface POSTicketPrintModalProps {
+  sale: Sale | null;
+  onClose: () => void;
+}
+
+function getFiscalQrData(sale: Sale, company: { name?: string; taxId?: string } | undefined): string | null {
+  if (!sale.notes?.includes('CAE')) return null;
+  const cae = sale.notes.match(/CAE: (\S+)/)?.[1];
+  if (!cae) return null;
+  const params = new URLSearchParams({
+    cuit: company?.taxId?.replace(/-/g, '') || '',
+    tipo: 'Factura',
+    ptoVta: sale.ticketNumber.substring(0, 4),
+    nro: sale.ticketNumber,
+    cae,
+    fchVto: '',
+    importe: sale.grandTotal.toFixed(2),
+    moneda: 'PES',
+    ctz: '1',
+  });
+  return `https://www.arca.gob.ar/qr?${params.toString()}`;
+}
+
+export const POSTicketPrintModal: React.FC<POSTicketPrintModalProps> = ({ sale, onClose }) => {
+  const { data: company } = useCompany();
+
+  if (!sale) return null;
+
+  const isFiscal = sale.notes?.includes('CAE') ?? false;
+  const qrData = getFiscalQrData(sale, company);
+
+  const handlePrint = () => {
+    window.print();
+  };
+
+  return (
+    <Dialog open={Boolean(sale)} onClose={onClose} maxWidth="xs" fullWidth slotProps={{ paper: { sx: { borderRadius: 4, p: 1 } } }}>
+      <DialogTitle sx={{ fontWeight: 900, textAlign: 'center', fontSize: '1.4rem' }}>
+        <CheckCircle size={36} color="#16A34A" style={{ margin: '0 auto 8px', display: 'block' }} />
+        ¡Venta Completada con Éxito!
+      </DialogTitle>
+
+      <DialogContent>
+        {/* Thermal Ticket Replica Box */}
+        <Box
+          id="printable-ticket"
+          sx={{
+            p: 2.5,
+            bgcolor: '#FFF',
+            color: '#000',
+            fontFamily: 'monospace',
+            fontSize: '0.85rem',
+            borderRadius: 2,
+            border: '2px dashed #94A3B8',
+            boxShadow: '0 4px 10px rgba(0,0,0,0.05)',
+          }}
+        >
+          <Typography variant="subtitle2" align="center" sx={{ fontWeight: 900, textTransform: 'uppercase' }}>
+            {company?.name || 'Nexus POS'}
+          </Typography>
+          <Typography variant="caption" align="center" sx={{ display: 'block' }}>
+            {company?.address || ''}
+          </Typography>
+          <Typography variant="caption" align="center" sx={{ display: 'block', mb: 1 }}>
+            CUIT: {company?.taxId || ''} | Tel: {company?.phone || ''}
+          </Typography>
+          <Divider sx={{ borderStyle: 'dashed', my: 1 }} />
+
+          <Typography variant="caption" sx={{ display: 'block' }}>
+            Ticket: {sale.ticketNumber}
+          </Typography>
+          <Typography variant="caption" sx={{ display: 'block' }}>
+            Fecha: {new Date(sale.createdAt).toLocaleString()}
+          </Typography>
+          <Typography variant="caption" sx={{ display: 'block' }}>
+            Atendió: {sale.userName}
+          </Typography>
+          <Typography variant="caption" sx={{ display: 'block', mb: 1 }}>
+            Cliente: {sale.customerName}
+          </Typography>
+          <Divider sx={{ borderStyle: 'dashed', my: 1 }} />
+
+          <Box sx={{ mb: 1 }}>
+            {sale.items.map((item) => (
+              <Box key={item.product.id} sx={{ my: 0.75 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700 }}>
+                  <span>{item.product.name}</span>
+                  <span>${item.total.toFixed(2)}</span>
+                </Box>
+                <Typography variant="caption" sx={{ display: 'block', color: '#475569' }}>
+                  {item.saleType === 'WEIGHT' && item.weightKg
+                    ? `${item.weightKg.toFixed(3)} Kg × $${item.unitPrice.toLocaleString()}/Kg`
+                    : item.isVariableProduct
+                    ? `${item.quantity} × $${item.unitPrice.toLocaleString()}`
+                    : `${item.quantity}x $${item.unitPrice.toFixed(2)}`}
+                </Typography>
+              </Box>
+            ))}
+          </Box>
+          <Divider sx={{ borderStyle: 'dashed', my: 1 }} />
+
+          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span>Subtotal:</span>
+            <span>${sale.subtotal.toFixed(2)}</span>
+          </Box>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span>IVA (16%):</span>
+            <span>${sale.taxTotal.toFixed(2)}</span>
+          </Box>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', fontWeight: 900, fontSize: '1.1rem', mt: 1 }}>
+            <span>TOTAL:</span>
+            <span>${sale.grandTotal.toFixed(2)}</span>
+          </Box>
+          <Divider sx={{ borderStyle: 'dashed', my: 1 }} />
+
+          {isFiscal && qrData && (
+            <Box sx={{ textAlign: 'center', my: 1.5 }}>
+              <QRCodeSVG value={qrData} size={90} />
+              <Typography variant="caption" sx={{ display: 'block', mt: 0.5, fontWeight: 700 }}>
+                Comprobante Fiscal ARCA
+              </Typography>
+            </Box>
+          )}
+
+          {sale.notes && (
+            <Typography variant="caption" align="center" sx={{ display: 'block', fontStyle: 'italic', my: 0.5 }}>
+              {sale.notes}
+            </Typography>
+          )}
+
+          <Typography variant="caption" align="center" sx={{ display: 'block', mt: 1, fontWeight: 700 }}>
+            Gracias por su compra
+          </Typography>
+        </Box>
+      </DialogContent>
+
+      <DialogActions sx={{ p: 2, justifyContent: 'space-between' }}>
+        <Button onClick={onClose} variant="outlined" sx={{ borderRadius: 3, minHeight: 48, fontWeight: 700 }}>
+          Cerrar
+        </Button>
+        <Button
+          onClick={handlePrint}
+          variant="contained"
+          color="primary"
+          startIcon={<Printer size={20} />}
+          sx={{ borderRadius: 3, minHeight: 48, px: 3, fontWeight: 800 }}
+        >
+          Imprimir Ticket
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+};

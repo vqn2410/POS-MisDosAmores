@@ -1,0 +1,21 @@
+{
+  "short_name": "Nexus POS",
+  "name": "Nexus POS Enterprise Application",
+  "icons": [
+    {
+      "src": "/brands/mercado-pago-logo.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "/brands/cuenta-dni-logo.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#0F172A",
+  "theme_color": "#0F172A",
+  "display": "standalone",
+  "orientation": "any"
+}
