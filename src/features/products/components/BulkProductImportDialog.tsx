@@ -24,8 +24,25 @@ interface BulkProductImportDialogProps {
 
 type CsvRow = Record<string, string>;
 
+const normalizeHeader = (header: string) => {
+  const normalized = header
+    .toLowerCase()
+    .replace(/^\uFEFF/, '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .replace(/[\s-]+/g, '_');
+
+  if (['codigo_de_barras', 'codigodebarras', 'barcode', 'cod_barra'].includes(normalized)) return 'codigo_barras';
+  if (['nombre_producto', 'producto', 'descripcion_producto'].includes(normalized)) return 'nombre';
+  if (['precio', 'precio_venta_$', 'precio_de_venta'].includes(normalized)) return 'precio_venta';
+  return normalized;
+};
+
 const parseCsv = (content: string): CsvRow[] => {
   const rows: string[][] = [];
+  const firstLine = content.split(/\r?\n/, 1)[0] || '';
+  const delimiter = (firstLine.match(/;/g)?.length || 0) > (firstLine.match(/,/g)?.length || 0) ? ';' : ',';
   let row: string[] = [];
   let value = '';
   let quoted = false;
@@ -39,7 +56,7 @@ const parseCsv = (content: string): CsvRow[] => {
       } else {
         quoted = !quoted;
       }
-    } else if (character === ',' && !quoted) {
+    } else if (character === delimiter && !quoted) {
       row.push(value.trim());
       value = '';
     } else if ((character === '\n' || character === '\r') && !quoted) {
@@ -57,7 +74,7 @@ const parseCsv = (content: string): CsvRow[] => {
   if (row.some(Boolean)) rows.push(row);
   if (rows.length < 2) return [];
 
-  const headers = rows[0].map((header) => header.toLowerCase().replace(/^\uFEFF/, '').trim());
+  const headers = rows[0].map(normalizeHeader);
   return rows.slice(1).map((columns) => Object.fromEntries(headers.map((header, index) => [header, columns[index] || ''])));
 };
 
@@ -100,9 +117,10 @@ export const BulkProductImportDialog: React.FC<BulkProductImportDialogProps> = (
       const rows = parseCsv(await file.text());
       if (!rows.length) throw new Error('El archivo no contiene productos. Descargá el ejemplo para respetar las columnas requeridas.');
 
-      const requiredHeaders = ['codigo_barras', 'nombre', 'costo', 'precio_venta'];
+      const requiredHeaders = ['nombre', 'costo', 'precio_venta'];
       const missingHeaders = requiredHeaders.filter((header) => !(header in rows[0]));
       if (missingHeaders.length) throw new Error(`Faltan columnas requeridas: ${missingHeaders.join(', ')}.`);
+      if (!('codigo_barras' in rows[0]) && !('sku' in rows[0])) throw new Error('Falta la columna codigo_barras o SKU.');
 
       const existingSkus = new Set(products.map((product) => product.sku.trim().toLowerCase()).filter(Boolean));
       const existingBarcodes = new Set(products.map((product) => product.barcode.trim()).filter(Boolean));
@@ -112,10 +130,10 @@ export const BulkProductImportDialog: React.FC<BulkProductImportDialogProps> = (
 
       const parsedProducts = rows.map((row, index) => {
         const rowNumber = index + 2;
-        const barcode = row.codigo_barras.trim();
+        const barcode = row.codigo_barras?.trim() || row.sku?.trim() || '';
         const sku = barcode;
         const name = row.nombre.trim();
-        if (!barcode || !name) throw new Error(`Fila ${rowNumber}: código de barras y nombre son obligatorios.`);
+        if (!barcode || !name) throw new Error(`Fila ${rowNumber}: código de barras (o SKU) y nombre son obligatorios.`);
         if (existingSkus.has(sku.toLowerCase()) || importedSkus.has(sku.toLowerCase())) throw new Error(`Fila ${rowNumber}: el SKU "${sku}" ya existe.`);
         if (barcode && (existingBarcodes.has(barcode) || importedBarcodes.has(barcode))) throw new Error(`Fila ${rowNumber}: el código de barras "${barcode}" ya existe.`);
 
