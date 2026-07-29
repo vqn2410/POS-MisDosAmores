@@ -87,6 +87,9 @@ export const POSView: React.FC = () => {
   const [isStockEntryOpen, setIsStockEntryOpen] = React.useState(false);
   const [outOfStockProduct, setOutOfStockProduct] = React.useState<Product | null>(null);
   const [stockEntryProduct, setStockEntryProduct] = React.useState<Product | null>(null);
+  const [isProductSearchOpen, setIsProductSearchOpen] = React.useState(false);
+  const [productSearchTerm, setProductSearchTerm] = React.useState('');
+  const [selectedSearchProduct, setSelectedSearchProduct] = React.useState<Product | null>(null);
 
   const searchInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -121,9 +124,11 @@ export const POSView: React.FC = () => {
     }
   }, [isPaymentModalOpen, focusSearchInput]);
 
-  // Keyboard Shortcuts Listener (F4 = Cobrar, F2 = Cliente, F6 = Suspender)
+  // Keyboard Shortcuts Listener (F4 = Cobrar, F2 = Cliente, F6 = Suspender, B = Buscar)
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
+
       if (e.key === 'F4') {
         e.preventDefault();
         if (cart.length > 0) openPaymentModal();
@@ -133,6 +138,11 @@ export const POSView: React.FC = () => {
       } else if (e.key === 'F6') {
         e.preventDefault();
         if (cart.length > 0) suspendSale();
+      } else if (e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        setProductSearchTerm('');
+        setSelectedSearchProduct(null);
+        setIsProductSearchOpen(true);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -216,6 +226,33 @@ export const POSView: React.FC = () => {
     setStockEntryProduct(outOfStockProduct);
     setOutOfStockProduct(null);
     setIsStockEntryOpen(true);
+  };
+
+  const productSearchResults = products.filter((product) => {
+    const query = productSearchTerm.trim().toLowerCase();
+    return !query || product.name.toLowerCase().includes(query) || product.sku.toLowerCase().includes(query) || product.barcode?.includes(query);
+  }).slice(0, 20);
+
+  const addSearchProductToCart = () => {
+    const product = selectedSearchProduct || productSearchResults[0];
+    if (!product) return;
+
+    const quantityInCart = cart
+      .filter((item) => item.product.id === product.id)
+      .reduce((total, item) => total + item.quantity, 0);
+    if (product.tracksStock !== false && quantityInCart + 1 > product.stock) {
+      setOutOfStockProduct(product);
+      setIsProductSearchOpen(false);
+      return;
+    }
+
+    if (product.saleType === 'WEIGHT') {
+      setWeightModalProduct(product);
+    } else {
+      addProductToCart(product);
+    }
+    setIsProductSearchOpen(false);
+    focusSearchInput();
   };
 
   const handleConfirmVariable = (quantity: number, unitPrice: number) => {
@@ -848,6 +885,37 @@ export const POSView: React.FC = () => {
       <POSTicketPrintModal sale={lastCompletedSale} onClose={() => setLastCompletedSale(null)} />
       <ProductNotFoundAlert code={missingProductCode} onClose={() => setMissingProductCode(null)} />
       <POSStockEntryModal open={isStockEntryOpen} onClose={() => { setIsStockEntryOpen(false); setStockEntryProduct(null); }} products={products} initialProduct={stockEntryProduct} />
+
+      <Dialog open={isProductSearchOpen} onClose={() => setIsProductSearchOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ fontWeight: 900 }}>Buscar productos (B)</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            fullWidth
+            label="Nombre, SKU o código de barras"
+            value={productSearchTerm}
+            onChange={(event) => { setProductSearchTerm(event.target.value); setSelectedSearchProduct(null); }}
+            onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addSearchProductToCart(); } }}
+            sx={{ mb: 1.5 }}
+          />
+          {productSearchResults.map((product) => (
+            <Button
+              key={product.id}
+              fullWidth
+              variant={selectedSearchProduct?.id === product.id ? 'contained' : 'text'}
+              onClick={() => setSelectedSearchProduct(product)}
+              onDoubleClick={addSearchProductToCart}
+              sx={{ justifyContent: 'flex-start', textAlign: 'left', py: 1.25, textTransform: 'none' }}
+            >
+              {product.name} - {product.stock} {product.unit}
+            </Button>
+          ))}
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setIsProductSearchOpen(false)}>Cancelar</Button>
+          <Button variant="contained" onClick={addSearchProductToCart} disabled={!selectedSearchProduct && productSearchResults.length === 0}>Agregar (Enter)</Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={Boolean(outOfStockProduct)} onClose={() => setOutOfStockProduct(null)} onKeyDown={(event) => {
         if (event.key === 'Enter') {
