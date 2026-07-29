@@ -34,6 +34,9 @@ const inputSlotProps = {
     bgcolor: '#F8FAFC',
     color: '#0F172A',
     fontWeight: 800,
+    minHeight: 56,
+    fontSize: '1.1rem',
+    '& input': { fontSize: '1.1rem' },
     '& .MuiOutlinedInput-notchedOutline': { borderColor: '#CBD5E1' },
     '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#94A3B8' },
     '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: '#2563EB', borderWidth: 2 },
@@ -44,6 +47,7 @@ const labelSlotProps = {
   sx: {
     color: '#475569',
     fontWeight: 800,
+    fontSize: '1.05rem',
     '&.Mui-focused': { color: '#2563EB' },
   },
 };
@@ -134,34 +138,38 @@ export const ProductDrawerEditor: React.FC<ProductDrawerEditorProps> = ({ produc
       slotProps={{
         paper: {
           sx: {
-            width: { xs: '100%', sm: 650 },
+            width: '100%',
+            maxWidth: 'none',
+            height: '100dvh',
             bgcolor: '#FFFFFF',
             color: '#0F172A',
             p: 0,
+            display: 'flex',
+            flexDirection: 'column',
           },
         },
       }}
     >
       {/* Drawer Header */}
-      <Box sx={{ p: 2.5, bgcolor: '#2563EB', color: '#FFFFFF', borderBottom: '3px solid #1D4ED8', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Typography variant="h6" sx={{ fontWeight: 900, color: '#FFFFFF' }}>
+      <Box sx={{ px: { xs: 2, md: 5 }, py: 2.5, bgcolor: '#2563EB', color: '#FFFFFF', borderBottom: '3px solid #1D4ED8', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Typography variant="h5" sx={{ fontWeight: 900, color: '#FFFFFF' }}>
           {product ? `Editar Producto: ${product.name || product.sku}` : '➕ Crear Nuevo Producto'}
         </Typography>
-        <IconButton size="small" onClick={onClose} sx={{ color: '#FFFFFF' }}>
-          <CloseIcon size={20} />
+        <IconButton size="large" onClick={onClose} sx={{ color: '#FFFFFF' }}>
+          <CloseIcon size={28} />
         </IconButton>
       </Box>
 
       {/* Single Scrollable Form (All sections stacked vertically in one view) */}
-      <Box component="form" onSubmit={handleFormSubmit} sx={{ p: 3, flexGrow: 1, overflowY: 'auto', bgcolor: '#FFFFFF', display: 'flex', flexDirection: 'column', gap: 3.5 }}>
+      <Box component="form" onSubmit={handleFormSubmit} sx={{ px: { xs: 2, md: 5 }, py: 4, flexGrow: 1, overflowY: 'auto', bgcolor: '#FFFFFF', display: 'flex', flexDirection: 'column', gap: 3.5 }}>
         {/* Section 1: Información General */}
-        <Paper elevation={0} sx={{ p: 2.5, bgcolor: '#F8FAFC', borderRadius: 3.5, border: '1px solid #E2E8F0' }}>
-          <Typography variant="subtitle1" sx={{ fontWeight: 900, mb: 2, color: '#2563EB', display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Tag size={20} /> 1. Información General del Producto
+        <Paper elevation={0} sx={{ p: { xs: 2.5, md: 3.5 }, bgcolor: '#F8FAFC', borderRadius: 3.5, border: '1px solid #E2E8F0' }}>
+          <Typography variant="h6" sx={{ fontWeight: 900, mb: 3, color: '#2563EB', display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Tag size={24} /> 1. Información General del Producto
           </Typography>
 
           <Grid container spacing={2.5}>
-            <Grid size={{ xs: 6 }}>
+            <Grid size={{ xs: 12, md: 6 }}>
               <TextField
                 fullWidth
                 size="small"
@@ -172,7 +180,7 @@ export const ProductDrawerEditor: React.FC<ProductDrawerEditorProps> = ({ produc
                 slotProps={{ input: inputSlotProps, inputLabel: labelSlotProps }}
               />
             </Grid>
-            <Grid size={{ xs: 6 }}>
+            <Grid size={{ xs: 12, md: 6 }}>
               <TextField
                 fullWidth
                 size="small"
@@ -207,7 +215,7 @@ export const ProductDrawerEditor: React.FC<ProductDrawerEditorProps> = ({ produc
                 slotProps={{ input: inputSlotProps, inputLabel: labelSlotProps }}
               />
             </Grid>
-            <Grid size={{ xs: 4 }}>
+            <Grid size={{ xs: 12, md: 4 }}>
               <TextField
                 select
                 fullWidth
@@ -224,7 +232,7 @@ export const ProductDrawerEditor: React.FC<ProductDrawerEditorProps> = ({ produc
                 ))}
               </TextField>
             </Grid>
-            <Grid size={{ xs: 4 }}>
+            <Grid size={{ xs: 12, md: 4 }}>
               <TextField
                 select
                 fullWidth
@@ -240,7 +248,7 @@ export const ProductDrawerEditor: React.FC<ProductDrawerEditorProps> = ({ produc
                 <MenuItem value="pza" sx={{ fontWeight: 800 }}>Pieza (pza) — legacy</MenuItem>
               </TextField>
             </Grid>
-            <Grid size={{ xs: 4 }}>
+            <Grid size={{ xs: 12, md: 4 }}>
               <TextField
                 select
                 fullWidth
@@ -255,7 +263,7 @@ export const ProductDrawerEditor: React.FC<ProductDrawerEditorProps> = ({ produc
                 <MenuItem value="VARIABLE" sx={{ fontWeight: 800 }}>Producto Vario (VARIABLE)</MenuItem>
               </TextField>
             </Grid>
-            <Grid size={{ xs: 6 }}>
+            <Grid size={{ xs: 12, md: 6 }}>
               <TextField
                 select
                 fullWidth
@@ -269,13 +277,13 @@ export const ProductDrawerEditor: React.FC<ProductDrawerEditorProps> = ({ produc
                 <MenuItem value="CIGARRILLOS" sx={{ fontWeight: 800 }}>Cigarrillos</MenuItem>
               </TextField>
             </Grid>
-            <Grid size={{ xs: 6 }}>
+            <Grid size={{ xs: 12, md: 6 }}>
               <FormControlLabel
                 control={<Switch checked={formData.isActive ?? true} onChange={(e) => handleChange('isActive', e.target.checked)} color="primary" />}
                 label={<Typography sx={{ fontWeight: 800, color: '#0F172A' }}>Activo en PDV</Typography>}
               />
             </Grid>
-            <Grid size={{ xs: 6 }}>
+            <Grid size={{ xs: 12, md: 6 }}>
               <FormControlLabel
                 control={<Switch checked={formData.tracksStock !== false} onChange={(e) => handleChange('tracksStock', e.target.checked)} color="warning" />}
                 label={<Typography sx={{ fontWeight: 800, color: '#0F172A' }}>Controla Stock</Typography>}
@@ -285,13 +293,13 @@ export const ProductDrawerEditor: React.FC<ProductDrawerEditorProps> = ({ produc
         </Paper>
 
         {/* Section 2: Precios y Costos */}
-        <Paper elevation={0} sx={{ p: 2.5, bgcolor: '#F8FAFC', borderRadius: 3.5, border: '1px solid #E2E8F0' }}>
-          <Typography variant="subtitle1" sx={{ fontWeight: 900, mb: 2, color: '#16A34A', display: 'flex', alignItems: 'center', gap: 1 }}>
-            <DollarSign size={20} /> 2. Precios y Margen de Ganancia
+        <Paper elevation={0} sx={{ p: { xs: 2.5, md: 3.5 }, bgcolor: '#F8FAFC', borderRadius: 3.5, border: '1px solid #E2E8F0' }}>
+          <Typography variant="h6" sx={{ fontWeight: 900, mb: 3, color: '#16A34A', display: 'flex', alignItems: 'center', gap: 1 }}>
+            <DollarSign size={24} /> 2. Precios y Margen de Ganancia
           </Typography>
 
           <Grid container spacing={2.5}>
-            <Grid size={{ xs: 6 }}>
+            <Grid size={{ xs: 12, md: 6 }}>
               <TextField
                 fullWidth
                 size="small"
@@ -303,7 +311,7 @@ export const ProductDrawerEditor: React.FC<ProductDrawerEditorProps> = ({ produc
                 slotProps={{ input: inputSlotProps, inputLabel: labelSlotProps }}
               />
             </Grid>
-            <Grid size={{ xs: 6 }}>
+            <Grid size={{ xs: 12, md: 6 }}>
               <TextField
                 fullWidth
                 size="small"
@@ -329,13 +337,13 @@ export const ProductDrawerEditor: React.FC<ProductDrawerEditorProps> = ({ produc
         </Paper>
 
         {/* Section 3: Inventario y Stock (Permite ingresar sin stock o stock 0) */}
-        <Paper elevation={0} sx={{ p: 2.5, bgcolor: '#F8FAFC', borderRadius: 3.5, border: '1px solid #E2E8F0' }}>
-          <Typography variant="subtitle1" sx={{ fontWeight: 900, mb: 2, color: '#D97706', display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Package size={20} /> 3. Control de Inventario y Stock
+        <Paper elevation={0} sx={{ p: { xs: 2.5, md: 3.5 }, bgcolor: '#F8FAFC', borderRadius: 3.5, border: '1px solid #E2E8F0' }}>
+          <Typography variant="h6" sx={{ fontWeight: 900, mb: 3, color: '#D97706', display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Package size={24} /> 3. Control de Inventario y Stock
           </Typography>
 
           <Grid container spacing={2.5}>
-            <Grid size={{ xs: 6 }}>
+            <Grid size={{ xs: 12, md: 6 }}>
               <TextField
                 fullWidth
                 size="small"
@@ -347,7 +355,7 @@ export const ProductDrawerEditor: React.FC<ProductDrawerEditorProps> = ({ produc
                 slotProps={{ input: inputSlotProps, inputLabel: labelSlotProps }}
               />
             </Grid>
-            <Grid size={{ xs: 6 }}>
+            <Grid size={{ xs: 12, md: 6 }}>
               <TextField
                 fullWidth
                 size="small"
@@ -363,13 +371,13 @@ export const ProductDrawerEditor: React.FC<ProductDrawerEditorProps> = ({ produc
         </Paper>
 
         {/* Section 4: Proveedor e Impuestos */}
-        <Paper elevation={0} sx={{ p: 2.5, bgcolor: '#F8FAFC', borderRadius: 3.5, border: '1px solid #E2E8F0' }}>
-          <Typography variant="subtitle1" sx={{ fontWeight: 900, mb: 2, color: '#8B5CF6', display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Truck size={20} /> 4. Proveedor y Tasa de Impuestos
+        <Paper elevation={0} sx={{ p: { xs: 2.5, md: 3.5 }, bgcolor: '#F8FAFC', borderRadius: 3.5, border: '1px solid #E2E8F0' }}>
+          <Typography variant="h6" sx={{ fontWeight: 900, mb: 3, color: '#8B5CF6', display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Truck size={24} /> 4. Proveedor y Tasa de Impuestos
           </Typography>
 
           <Grid container spacing={2.5}>
-            <Grid size={{ xs: 6 }}>
+            <Grid size={{ xs: 12, md: 6 }}>
               <TextField
                 select
                 fullWidth
@@ -386,7 +394,7 @@ export const ProductDrawerEditor: React.FC<ProductDrawerEditorProps> = ({ produc
                 ))}
               </TextField>
             </Grid>
-            <Grid size={{ xs: 6 }}>
+            <Grid size={{ xs: 12, md: 6 }}>
               <TextField
                 fullWidth
                 size="small"
@@ -402,9 +410,9 @@ export const ProductDrawerEditor: React.FC<ProductDrawerEditorProps> = ({ produc
         </Paper>
 
         {/* Section 5: Imagen del Producto */}
-        <Paper elevation={0} sx={{ p: 2.5, bgcolor: '#F8FAFC', borderRadius: 3.5, border: '1px solid #E2E8F0' }}>
-          <Typography variant="subtitle1" sx={{ fontWeight: 900, mb: 2, color: '#0284C7', display: 'flex', alignItems: 'center', gap: 1 }}>
-            <ImageIcon size={20} /> 5. Imagen del Producto
+        <Paper elevation={0} sx={{ p: { xs: 2.5, md: 3.5 }, bgcolor: '#F8FAFC', borderRadius: 3.5, border: '1px solid #E2E8F0' }}>
+          <Typography variant="h6" sx={{ fontWeight: 900, mb: 3, color: '#0284C7', display: 'flex', alignItems: 'center', gap: 1 }}>
+            <ImageIcon size={24} /> 5. Imagen del Producto
           </Typography>
 
           {/* Live Preview */}
@@ -430,11 +438,11 @@ export const ProductDrawerEditor: React.FC<ProductDrawerEditorProps> = ({ produc
       </Box>
 
       {/* Drawer Footer */}
-      <Box sx={{ p: 2.5, bgcolor: '#F8FAFC', borderTop: '2px solid #E2E8F0', display: 'flex', justifyContent: 'space-between' }}>
-        <Button onClick={onClose} variant="outlined" sx={{ borderRadius: 3, px: 3, fontWeight: 800, color: '#475569', borderColor: '#CBD5E1' }}>
+      <Box sx={{ px: { xs: 2, md: 5 }, py: 2.5, bgcolor: '#F8FAFC', borderTop: '2px solid #E2E8F0', display: 'flex', justifyContent: 'space-between' }}>
+        <Button onClick={onClose} variant="outlined" size="large" sx={{ minHeight: 56, borderRadius: 3, px: 4, fontSize: '1.05rem', fontWeight: 800, color: '#475569', borderColor: '#CBD5E1' }}>
           Cancelar
         </Button>
-        <Button onClick={() => handleFormSubmit()} variant="contained" startIcon={<Save size={18} />} sx={{ borderRadius: 3, px: 4, fontWeight: 900, bgcolor: '#2563EB', '&:hover': { bgcolor: '#1D4ED8' } }}>
+        <Button onClick={() => handleFormSubmit()} variant="contained" size="large" startIcon={<Save size={22} />} sx={{ minHeight: 56, borderRadius: 3, px: 5, fontSize: '1.05rem', fontWeight: 900, bgcolor: '#2563EB', '&:hover': { bgcolor: '#1D4ED8' } }}>
           Guardar Cambios
         </Button>
       </Box>
