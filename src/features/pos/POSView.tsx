@@ -123,7 +123,7 @@ export const POSView: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [cart.length, openPaymentModal, suspendSale]);
 
-  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleSearchKeyDown = (e: Pick<React.KeyboardEvent<HTMLInputElement>, 'key' | 'preventDefault'>) => {
     const trimmed = searchTerm.trim();
 
     if (e.key === 'Enter') {
@@ -211,40 +211,46 @@ export const POSView: React.FC = () => {
         display: 'flex',
         flexDirection: 'column',
         height: 'calc(100vh - 64px - 41px - 32px)',
-        p: 2,
-        gap: 1.5,
-        bgcolor: '#FFFFFF',
+        gap: 0,
+        p: 0,
+        bgcolor: '#D9D9D9',
         overflow: 'hidden',
+        fontFamily: 'Arial, sans-serif',
       }}
     >
-      {/* 1. BUSCADOR SUPERMERCADO FULL-WIDTH (Alto: 60px, Fuente: 20px, Auto-Foco) */}
-      <Paper elevation={1} sx={{ p: 0.5, borderRadius: 3.5, bgcolor: '#FFFFFF', border: '2px solid #2563EB' }}>
+      <Box sx={{ px: 1, py: 0.45, bgcolor: '#2F66D0', borderTop: '1px solid #FFFFFF', borderBottom: '2px solid #1E4C9A' }}>
+        <Typography sx={{ color: '#FFFFFF', fontWeight: 900, fontSize: '1.15rem', textShadow: '1px 1px #173B78' }}>
+          VENTA DE PRODUCTOS · Ticket actual
+        </Typography>
+      </Box>
+
+      {/* Scanner row, intentionally dense to ease migration from legacy POS terminals. */}
+      <Paper elevation={0} square sx={{ p: 0.7, bgcolor: '#F3F3F3', borderBottom: '1px solid #AFAFAF', display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Typography sx={{ color: '#1E4EBC', fontWeight: 800, fontSize: '0.9rem', whiteSpace: 'nowrap' }}>Código del Producto:</Typography>
         <TextField
           inputRef={searchInputRef}
           fullWidth
-          placeholder="Escanee un código de barras o escriba el código del producto"
+          placeholder="Escanee un código de barras o escriba el código"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           onKeyDown={handleSearchKeyDown}
           slotProps={{
             input: {
               startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon size={28} color="#2563EB" style={{ marginLeft: 8 }} />
-                </InputAdornment>
+                <InputAdornment position="start"><SearchIcon size={20} color="#1E4EBC" /></InputAdornment>
               ),
               endAdornment: (
                 <InputAdornment position="end">
                   <Box
                     sx={{
-                      width: 44,
-                      height: 44,
-                      borderRadius: 2.5,
-                      bgcolor: '#EFF6FF',
+                      width: 30,
+                      height: 30,
+                      borderRadius: 0.5,
+                      bgcolor: '#E7F2FF',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      mr: 0.5,
+                      mr: 0,
                     }}
                   >
                     <StoreIcon size={22} color="#2563EB" />
@@ -252,49 +258,57 @@ export const POSView: React.FC = () => {
                 </InputAdornment>
               ),
               sx: {
-                height: 60,
-                fontSize: '1.25rem',
-                fontWeight: 600,
-                color: '#334155',
-                '& fieldset': { border: 'none' },
+                height: 36,
+                fontSize: '1rem',
+                fontWeight: 700,
+                color: '#0F172A',
+                bgcolor: '#FFFFFF',
+                '& fieldset': { borderColor: '#2F66D0' },
               },
             },
           }}
         />
+        <Button
+          variant="outlined"
+          onClick={() => handleSearchKeyDown({ key: 'Enter', preventDefault: () => undefined })}
+          sx={{ minWidth: 205, height: 36, borderRadius: 0.5, fontSize: '0.82rem', fontWeight: 800, color: '#1C1C1C', borderColor: '#2F66D0', bgcolor: '#FFFFFF' }}
+        >
+          ✓ ENTER · Agregar producto
+        </Button>
       </Paper>
 
-      {/* 2. BARRA DE CONTEXTO (Cliente | Vendedor | Caja | Cambiar Cliente) */}
+      {/* Compact legacy-style operation toolbar. */}
       <Paper
         elevation={0}
         sx={{
-          px: 2.5,
-          py: 1,
-          borderRadius: 3,
-          bgcolor: '#FFFFFF',
-          border: '1px solid #E2E8F0',
+          px: 0.75,
+          py: 0.55,
+          borderRadius: 0,
+          bgcolor: '#ECECEC',
+          borderBottom: '1px solid #AFAFAF',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
         }}
       >
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <User size={18} color="#64748B" />
-            <Typography variant="body1" sx={{ fontWeight: 700, color: '#0F172A' }}>
+            <Typography variant="body2" sx={{ fontWeight: 700, color: '#0F172A' }}>
               Cliente: <span style={{ fontWeight: 800 }}>{customer.name}</span>
             </Typography>
           </Box>
 
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <UserCheck size={18} color="#64748B" />
-            <Typography variant="body1" sx={{ fontWeight: 700, color: '#0F172A' }}>
+            <Typography variant="body2" sx={{ fontWeight: 700, color: '#0F172A' }}>
               Vendedor: <span style={{ fontWeight: 800 }}>{user?.fullName || 'Sin asignar'}</span>
             </Typography>
           </Box>
 
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <Store size={18} color="#64748B" />
-            <Typography variant="body1" sx={{ fontWeight: 700, color: '#0F172A' }}>
+            <Typography variant="body2" sx={{ fontWeight: 700, color: '#0F172A' }}>
               Caja: <span style={{ fontWeight: 800 }}>Caja #1</span>
             </Typography>
           </Box>
@@ -310,7 +324,7 @@ export const POSView: React.FC = () => {
                 if (selected) setCustomer(selected);
                 setIsCustomerSelectOpen(false);
               }}
-              sx={{ height: 36, fontWeight: 700, fontSize: '0.9rem', bgcolor: '#F8FAFC' }}
+                sx={{ height: 30, fontWeight: 700, fontSize: '0.85rem', bgcolor: '#FFFFFF' }}
             >
               {customers.map((c) => (
                 <MenuItem key={c.id} value={c.id} sx={{ fontWeight: 700 }}>
@@ -325,15 +339,15 @@ export const POSView: React.FC = () => {
               onClick={() => setIsCustomerSelectOpen(true)}
               startIcon={<User size={16} />}
               sx={{
-                borderRadius: 2.5,
-                bgcolor: '#EFF6FF',
-                color: '#2563EB',
-                borderColor: '#BFDBFE',
+                borderRadius: 0.5,
+                bgcolor: '#FFFFFF',
+                color: '#1C1C1C',
+                borderColor: '#2F66D0',
                 fontWeight: 700,
                 textTransform: 'none',
-                height: 36,
-                px: 2,
-                '&:hover': { bgcolor: '#DBEAFE' },
+                height: 30,
+                px: 1.5,
+                '&:hover': { bgcolor: '#E7F2FF' },
               }}
             >
               Cambiar cliente
@@ -342,23 +356,22 @@ export const POSView: React.FC = () => {
         </Box>
       </Paper>
 
-      {/* 3. TICKET DE VENTA (100% ANCHO, PROTAGONISTA ABSOLUTO) */}
+      {/* Main ticket grid */}
       <Paper
         elevation={2}
         sx={{
           flexGrow: 1,
           display: 'flex',
           flexDirection: 'column',
-          borderRadius: 4,
+          borderRadius: 0,
           overflow: 'hidden',
-          border: '1px solid #E2E8F0',
+          border: '1px solid #8A8A8A',
           bgcolor: '#FFFFFF',
         }}
       >
-        {/* Ticket Header Line */}
-        <Box sx={{ px: 3, py: 1.5, bgcolor: '#FFFFFF', borderBottom: '1px solid #E2E8F0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Typography variant="h5" sx={{ fontWeight: 900, color: '#0F172A', fontSize: '1.5rem' }}>
-            Ticket de Venta
+        <Box sx={{ px: 1.25, py: 0.45, bgcolor: '#D6D6D6', borderBottom: '1px solid #8A8A8A', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Typography sx={{ fontWeight: 900, color: '#1C1C1C', fontSize: '0.9rem' }}>
+            Ticket {cart.length ? `${cart.length} artículo${cart.length === 1 ? '' : 's'}` : 'nuevo'}
           </Typography>
 
           <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
@@ -368,14 +381,14 @@ export const POSView: React.FC = () => {
               onClick={suspendSale}
               startIcon={<Pause size={16} />}
               sx={{
-                borderRadius: 2.5,
-                borderColor: '#E2E8F0',
-                color: '#334155',
+                borderRadius: 0.5,
+                borderColor: '#2F66D0',
+                color: '#1C1C1C',
                 fontWeight: 700,
-                height: 38,
-                px: 2,
+                height: 28,
+                px: 1.25,
                 bgcolor: '#FFFFFF',
-                '&:hover': { bgcolor: '#F8FAFC' },
+                '&:hover': { bgcolor: '#E7F2FF' },
               }}
             >
               Suspender (F6)
@@ -388,20 +401,20 @@ export const POSView: React.FC = () => {
               onClick={clearCart}
               startIcon={<Trash2 size={16} />}
               sx={{
-                borderRadius: 2.5,
-                borderColor: '#FCA5A5',
+                borderRadius: 0.5,
+                borderColor: '#B94141',
                 color: '#DC2626',
                 fontWeight: 700,
-                height: 38,
-                px: 2,
-                bgcolor: '#FEF2F2',
+                height: 28,
+                px: 1.25,
+                bgcolor: '#FFFFFF',
                 '&:hover': { bgcolor: '#FEE2E2' },
               }}
             >
               Vaciar Ticket
             </Button>
 
-            <IconButton size="small" sx={{ color: '#64748B', border: '1px solid #E2E8F0', borderRadius: 2.5, width: 38, height: 38 }}>
+            <IconButton size="small" sx={{ color: '#64748B', border: '1px solid #8A8A8A', borderRadius: 0.5, width: 28, height: 28 }}>
               <MoreVertical size={20} />
             </IconButton>
           </Box>
@@ -411,7 +424,7 @@ export const POSView: React.FC = () => {
         <Box sx={{ flexGrow: 1, overflowY: 'auto' }}>
           <Table stickyHeader sx={{ minWidth: 650 }}>
             <TableHead>
-              <TableRow sx={{ '& th': { bgcolor: '#F8FAFC', color: '#64748B', fontWeight: 800, fontSize: '0.9rem', borderBottom: '1px solid #E2E8F0' } }}>
+              <TableRow sx={{ '& th': { bgcolor: '#E6E5D7', color: '#1C1C1C', fontWeight: 800, fontSize: '0.78rem', borderBottom: '1px solid #AFAFAF', py: 0.4 } }}>
                 <TableCell sx={{ width: 60 }}>#</TableCell>
                 <TableCell>Producto</TableCell>
                 <TableCell align="center" sx={{ width: 140 }}>Cantidad</TableCell>
@@ -430,11 +443,11 @@ export const POSView: React.FC = () => {
                     onClick={() => setSelectedItemIndex(index)}
                     sx={{
                       cursor: 'pointer',
-                      bgcolor: isSelected ? '#EFF6FF !important' : index % 2 === 0 ? '#FFFFFF' : '#F8FAFC',
-                      borderLeft: isSelected ? '4px solid #2563EB' : '4px solid transparent',
+                      bgcolor: isSelected ? '#E5F0FF !important' : '#FFFFFF',
+                      borderLeft: isSelected ? '3px solid #2F66D0' : '3px solid transparent',
                       transition: 'all 0.15s ease',
                       '&:hover': { bgcolor: isSelected ? '#DBEAFE !important' : '#F1F5F9 !important' },
-                      '& td': { py: 1.75, borderBottom: '1px solid #E2E8F0' },
+                      '& td': { py: 0.75, borderBottom: '1px solid #E1E1E1' },
                     }}
                   >
                   <TableCell sx={{ fontWeight: 800, color: '#0F172A', fontSize: '1rem' }}>{index + 1}</TableCell>
@@ -536,8 +549,7 @@ export const POSView: React.FC = () => {
           </Table>
         </Box>
 
-        {/* 4. PANEL INFERIOR DE RESUMEN Y TOTALES */}
-        <Box sx={{ p: 3, bgcolor: '#FFFFFF', borderTop: '1px solid #E2E8F0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Box sx={{ p: 1.25, bgcolor: '#E8E8E8', borderTop: '1px solid #8A8A8A', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           {/* Left Figures */}
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 280 }}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -567,9 +579,9 @@ export const POSView: React.FC = () => {
               </Typography>
             </Box>
 
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pt: 1, borderTop: '1px solid #E2E8F0', mt: 0.5 }}>
-              <Typography variant="h5" sx={{ fontWeight: 900, color: '#0F172A' }}>
-                TOTAL
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pt: 0.5, borderTop: '1px solid #AFAFAF', mt: 0.25 }}>
+              <Typography variant="h6" sx={{ fontWeight: 900, color: '#0F172A' }}>
+                TOTAL VENTA
               </Typography>
               <Typography variant="h3" sx={{ fontWeight: 900, color: '#2563EB', fontSize: '2.25rem' }}>
                 ${grandTotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
@@ -582,11 +594,11 @@ export const POSView: React.FC = () => {
             {/* A PAGAR Box */}
             <Box
               sx={{
-                p: 2.5,
-                borderRadius: 3.5,
-                bgcolor: '#F0FDF4',
-                border: '1px solid #DCFCE7',
-                minWidth: 260,
+                p: 1.25,
+                borderRadius: 0.5,
+                bgcolor: '#FFFFFF',
+                border: '1px solid #8A8A8A',
+                minWidth: 220,
                 display: 'flex',
                 flexDirection: 'column',
                 gap: 0.5,
@@ -611,11 +623,11 @@ export const POSView: React.FC = () => {
             {/* CAMBIO Box */}
             <Box
               sx={{
-                p: 2.5,
-                borderRadius: 3.5,
-                bgcolor: '#EFF6FF',
-                border: '1px solid #DBEAFE',
-                minWidth: 220,
+                p: 1.25,
+                borderRadius: 0.5,
+                bgcolor: '#DCE8F3',
+                border: '1px solid #8A8A8A',
+                minWidth: 210,
                 display: 'flex',
                 flexDirection: 'column',
                 gap: 0.5,
@@ -632,8 +644,7 @@ export const POSView: React.FC = () => {
         </Box>
       </Paper>
 
-      {/* 5. BARRA INFERIOR DE BOTONES DE ACCIÓN (100% ANCHO, 5 BOTONES) */}
-      <Box sx={{ display: 'flex', gap: 1.5 }}>
+      <Box sx={{ display: 'flex', gap: 0.75, p: 0.75, bgcolor: '#ECECEC', borderTop: '1px solid #FFFFFF' }}>
         {/* 1. Cobrar (Solid Vibrant Blue) */}
         <Button
           fullWidth
@@ -643,13 +654,15 @@ export const POSView: React.FC = () => {
           onClick={openPaymentModal}
           startIcon={<CreditCard size={22} />}
           sx={{
-            py: 1.75,
-            borderRadius: 3,
+            py: 1,
+            borderRadius: 0.5,
             fontWeight: 900,
             fontSize: '1.15rem',
-            minHeight: 52,
-            bgcolor: '#2563EB',
-            '&:hover': { bgcolor: '#1D4ED8' },
+            minHeight: 42,
+            bgcolor: '#E8F5E9',
+            color: '#123D16',
+            border: '1px solid #26702A',
+            '&:hover': { bgcolor: '#D2EBD4' },
           }}
         >
           Cobrar
@@ -662,13 +675,14 @@ export const POSView: React.FC = () => {
           variant="contained"
           startIcon={<Percent size={20} />}
           sx={{
-            py: 1.75,
-            borderRadius: 3,
+            py: 1,
+            borderRadius: 0.5,
             fontWeight: 800,
             fontSize: '1.05rem',
-            minHeight: 52,
-            bgcolor: '#EFF6FF',
-            color: '#2563EB',
+            minHeight: 42,
+            bgcolor: '#FFFFFF',
+            color: '#1C1C1C',
+            border: '1px solid #2F66D0',
             boxShadow: 'none',
             '&:hover': { bgcolor: '#DBEAFE' },
           }}
@@ -684,13 +698,14 @@ export const POSView: React.FC = () => {
           onClick={() => setIsCustomerSelectOpen(true)}
           startIcon={<User size={20} />}
           sx={{
-            py: 1.75,
-            borderRadius: 3,
+            py: 1,
+            borderRadius: 0.5,
             fontWeight: 800,
             fontSize: '1.05rem',
-            minHeight: 52,
-            bgcolor: '#EFF6FF',
-            color: '#2563EB',
+            minHeight: 42,
+            bgcolor: '#FFFFFF',
+            color: '#1C1C1C',
+            border: '1px solid #2F66D0',
             boxShadow: 'none',
             '&:hover': { bgcolor: '#DBEAFE' },
           }}
@@ -706,13 +721,14 @@ export const POSView: React.FC = () => {
           onClick={suspendSale}
           startIcon={<Pause size={20} />}
           sx={{
-            py: 1.75,
-            borderRadius: 3,
+            py: 1,
+            borderRadius: 0.5,
             fontWeight: 800,
             fontSize: '1.05rem',
-            minHeight: 52,
-            bgcolor: '#FFFBEB',
-            color: '#D97706',
+            minHeight: 42,
+            bgcolor: '#FFFFFF',
+            color: '#1C1C1C',
+            border: '1px solid #2F66D0',
             boxShadow: 'none',
             '&:hover': { bgcolor: '#FEF3C7' },
           }}
@@ -728,13 +744,14 @@ export const POSView: React.FC = () => {
           onClick={clearCart}
           startIcon={<Trash2 size={20} />}
           sx={{
-            py: 1.75,
-            borderRadius: 3,
+            py: 1,
+            borderRadius: 0.5,
             fontWeight: 800,
             fontSize: '1.05rem',
-            minHeight: 52,
-            bgcolor: '#FEF2F2',
+            minHeight: 42,
+            bgcolor: '#FFFFFF',
             color: '#DC2626',
+            border: '1px solid #B94141',
             boxShadow: 'none',
             '&:hover': { bgcolor: '#FEE2E2' },
           }}

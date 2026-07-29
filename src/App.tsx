@@ -13,7 +13,7 @@ import { useProducts } from './hooks/useProducts';
 // Layout Components
 import { Header } from './components/layout/Header';
 import { Sidebar } from './components/layout/Sidebar';
-import { WorkspaceTabs } from './components/layout/WorkspaceTabs';
+import { OpenTicketsBar } from './components/layout/OpenTicketsBar';
 import { StatusFooter } from './components/layout/StatusFooter';
 import { CommandPaletteModal } from './components/layout/CommandPaletteModal';
 import { HotkeysListener } from './components/layout/HotkeysListener';
@@ -317,7 +317,7 @@ const AppContent: React.FC = () => {
           {/* Dynamic Workspace Container */}
           <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', bgcolor: 'background.default' }}>
             <Box sx={{ display: { xs: 'none', md: 'block' } }}>
-              <WorkspaceTabs />
+              <OpenTicketsBar />
             </Box>
             <Box sx={{ flexGrow: 1, overflowY: 'auto' }}>{renderActiveView()}</Box>
           </Box>
