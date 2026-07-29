@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { Product, CartItem, Customer, SalePayment, Sale } from '../../../types';
 import { useAuthStore } from '../../../store/useAuthStore';
+import { calculateCartTotals } from '../utils/calculateCartTotals';
 
 const defaultCustomer: Customer = {
   id: 'cust-01',
@@ -16,6 +17,7 @@ export interface SuspendedSale {
   items: CartItem[];
   customer: Customer;
   notes: string;
+  discountGlobal: number;
   savedAt: string;
 }
 
@@ -349,7 +351,7 @@ export const usePOSStore = create<POSState>((set, get) => ({
   setNotes: (notes) => set({ notes }),
 
   suspendSale: () => {
-    const { cart, customer, notes } = get();
+    const { cart, customer, notes, discountGlobal } = get();
     if (cart.length === 0) return;
 
     const newSuspended: SuspendedSale = {
@@ -357,6 +359,7 @@ export const usePOSStore = create<POSState>((set, get) => ({
       items: [...cart],
       customer,
       notes,
+      discountGlobal,
       savedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
 
@@ -364,6 +367,7 @@ export const usePOSStore = create<POSState>((set, get) => ({
       suspendedSales: [...state.suspendedSales, newSuspended],
       cart: [],
       notes: '',
+      discountGlobal: 0,
       customer: defaultCustomer,
       selectedItemIndex: 0,
     }));
@@ -377,6 +381,7 @@ export const usePOSStore = create<POSState>((set, get) => ({
       cart: target.items,
       customer: target.customer,
       notes: target.notes,
+      discountGlobal: target.discountGlobal,
       suspendedSales: state.suspendedSales.filter((s) => s.id !== suspendedId),
       selectedItemIndex: target.items.length > 0 ? target.items.length - 1 : 0,
     }));
@@ -406,15 +411,12 @@ export const usePOSStore = create<POSState>((set, get) => ({
   clearPayments: () => set({ payments: [] }),
 
   completeSale: (ticketNumber: string) => {
-    const { cart, customer, payments, notes } = get();
+    const { cart, customer, payments, notes, discountGlobal } = get();
     if (cart.length === 0) return null;
 
     const authState = useAuthStore.getState();
 
-    const subtotal = cart.reduce((acc, item) => acc + item.subtotal, 0);
-    const taxTotal = cart.reduce((acc, item) => acc + item.tax, 0);
-    const discountTotal = cart.reduce((acc, item) => acc + (item.subtotal * (item.discount / 100)), 0);
-    const grandTotal = cart.reduce((acc, item) => acc + item.total, 0);
+    const { subtotal, taxTotal, discountTotal, grandTotal } = calculateCartTotals(cart, discountGlobal);
 
     const newSale: Sale = {
       id: '',

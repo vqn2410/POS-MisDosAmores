@@ -36,6 +36,7 @@ import { CuentaDniPaymentProvider, type CuentaDniPaymentResult } from '../../pay
 import { FiscalRulesEngine } from '../../billing/services/FiscalRulesEngine';
 import { MercadoPagoLogo } from '../../../components/common/MercadoPagoLogo';
 import { CuentaDniLogo } from '../../../components/common/CuentaDniLogo';
+import { calculateCartTotals } from '../utils/calculateCartTotals';
 
 interface POSPaymentModalProps {
   onPrintTicket: (sale: Sale) => void;
@@ -44,7 +45,7 @@ interface POSPaymentModalProps {
 export type ExtendedPaymentMethod = PaymentMethodType | 'MERCADOPAGO' | 'CUENTA_DNI';
 
 export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket }) => {
-  const { isPaymentModalOpen, closePaymentModal, cart, payments, addPayment, completeSale, customer } =
+  const { isPaymentModalOpen, closePaymentModal, cart, payments, addPayment, completeSale, customer, discountGlobal } =
     usePOSStore();
   const { addNotification } = useNotificationStore();
   const createSale = useCreateSale();
@@ -65,7 +66,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
   const mpClient = React.useMemo(() => new MercadoPagoClient(), []);
   const cdniProvider = React.useMemo(() => new CuentaDniPaymentProvider(), []);
 
-  const grandTotal = cart.reduce((acc, item) => acc + item.total, 0);
+  const { grandTotal } = calculateCartTotals(cart, discountGlobal);
   const totalPaid = payments.reduce((acc, p) => acc + p.amount, 0);
   const pendingAmount = Math.max(0, grandTotal - totalPaid);
   const change = Math.max(0, totalPaid - grandTotal);

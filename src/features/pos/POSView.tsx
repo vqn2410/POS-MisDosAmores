@@ -15,6 +15,10 @@ import {
   Chip,
   Select,
   MenuItem,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
 } from '@mui/material';
 import {
   Search as SearchIcon,
@@ -41,6 +45,7 @@ import { POSSuspendedModal } from './components/POSSuspendedModal';
 import { POSTicketPrintModal } from './components/POSTicketPrintModal';
 import { ProductNotFoundAlert } from './components/ProductNotFoundAlert';
 import { parseQuickVariableProduct } from './utils/parseQuickVariableProduct';
+import { calculateCartTotals } from './utils/calculateCartTotals';
 
 
 export const POSView: React.FC = () => {
@@ -59,6 +64,9 @@ export const POSView: React.FC = () => {
     payments,
     selectedItemIndex,
     setSelectedItemIndex,
+    updateItemDiscount,
+    discountGlobal,
+    setDiscountGlobal,
   } = usePOSStore();
   const { addNotification } = useNotificationStore();
   const { data: products = [] } = useProducts();
@@ -72,6 +80,8 @@ export const POSView: React.FC = () => {
   const [lastCompletedSale, setLastCompletedSale] = React.useState<Sale | null>(null);
   const [isCustomerSelectOpen, setIsCustomerSelectOpen] = React.useState(false);
   const [missingProductCode, setMissingProductCode] = React.useState<string | null>(null);
+  const [discountTarget, setDiscountTarget] = React.useState<'GLOBAL' | string | null>(null);
+  const [discountValue, setDiscountValue] = React.useState('');
 
   const searchInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -91,6 +101,7 @@ export const POSView: React.FC = () => {
   React.useEffect(() => {
     const handleGlobalClick = () => {
       if (document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA' && document.activeElement?.getAttribute('role') !== 'textbox') {
+        if (document.activeElement?.getAttribute('data-pos-selection') === 'true') return;
         focusSearchInput();
       }
     };
@@ -197,13 +208,24 @@ export const POSView: React.FC = () => {
   };
 
   // Financial Summary
-  const subtotal = cart.reduce((acc, item) => acc + item.subtotal, 0);
-  const taxTotal = cart.reduce((acc, item) => acc + item.tax, 0);
-  const discountTotal = cart.reduce((acc, item) => acc + item.subtotal * (item.discount / 100), 0);
-  const grandTotal = cart.reduce((acc, item) => acc + item.total, 0);
+  const { subtotal, taxTotal, discountTotal, grandTotal } = calculateCartTotals(cart, discountGlobal);
 
   const totalPaid = payments.reduce((acc, p) => acc + p.amount, 0);
   const changeDue = Math.max(0, totalPaid - grandTotal);
+
+  const openDiscountDialog = (target: 'GLOBAL' | string) => {
+    const item = target === 'GLOBAL' ? null : cart.find((cartItem) => cartItem.product.id === target);
+    setDiscountValue(String(target === 'GLOBAL' ? discountGlobal : item?.discount || 0));
+    setDiscountTarget(target);
+  };
+
+  const applyDiscount = () => {
+    const discount = Number(discountValue.replace(',', '.'));
+    if (!Number.isFinite(discount) || discount < 0 || discount > 100 || !discountTarget) return;
+    if (discountTarget === 'GLOBAL') setDiscountGlobal(discount);
+    else updateItemDiscount(discountTarget, discount);
+    setDiscountTarget(null);
+  };
 
   return (
     <Box
@@ -440,7 +462,18 @@ export const POSView: React.FC = () => {
                   <TableRow
                     key={item.product.id}
                     hover
-                    onClick={() => setSelectedItemIndex(index)}
+                    tabIndex={0}
+                    data-pos-selection="true"
+                    onClick={(event) => {
+                      setSelectedItemIndex(index);
+                      event.currentTarget.focus();
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key.toLowerCase() === 'd') {
+                        event.preventDefault();
+                        openDiscountDialog(item.product.id);
+                      }
+                    }}
                     sx={{
                       cursor: 'pointer',
                       bgcolor: isSelected ? '#E5F0FF !important' : '#FFFFFF',
@@ -461,6 +494,8 @@ export const POSView: React.FC = () => {
                       <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, color: '#64748B' }}>
                         {item.product.barcode && item.product.barcode !== '0' ? `Código: ${item.product.barcode} | ` : ''}SKU: {item.product.sku}
                       </Typography>
+
+                      {item.discount > 0 && <Chip label={`${item.discount}% dto.`} size="small" sx={{ height: 22, fontWeight: 800, bgcolor: '#FFF3CD', color: '#8A5800', borderRadius: 0.5 }} />}
 
                       {item.saleType === 'WEIGHT' && item.weightKg && (
                         <Chip
@@ -674,6 +709,7 @@ export const POSView: React.FC = () => {
           size="large"
           variant="contained"
           startIcon={<Percent size={20} />}
+          onClick={() => openDiscountDialog('GLOBAL')}
           sx={{
             py: 1,
             borderRadius: 0.5,
@@ -784,6 +820,33 @@ export const POSView: React.FC = () => {
       <POSSuspendedModal open={isSuspendedModalOpen} onClose={() => setIsSuspendedModalOpen(false)} />
       <POSTicketPrintModal sale={lastCompletedSale} onClose={() => setLastCompletedSale(null)} />
       <ProductNotFoundAlert code={missingProductCode} onClose={() => setMissingProductCode(null)} />
+
+      <Dialog open={Boolean(discountTarget)} onClose={() => setDiscountTarget(null)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontWeight: 900 }}>
+          {discountTarget === 'GLOBAL' ? 'Descuento global del ticket' : 'Descuento del producto'}
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Ingresá un porcentaje entre 0 y 100. El descuento global se suma a los descuentos individuales ya aplicados.
+          </Typography>
+          <TextField
+            autoFocus
+            fullWidth
+            type="number"
+            label="Descuento (%)"
+            value={discountValue}
+            onChange={(event) => setDiscountValue(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') applyDiscount();
+            }}
+            slotProps={{ htmlInput: { min: 0, max: 100, step: 0.01 } }}
+          />
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setDiscountTarget(null)}>Cancelar</Button>
+          <Button variant="contained" onClick={applyDiscount}>Aplicar</Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };
