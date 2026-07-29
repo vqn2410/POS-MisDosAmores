@@ -2,6 +2,7 @@ import {
   collection,
   doc,
   getDocs,
+  getDocsFromCache,
   getDoc,
   addDoc,
   updateDoc,
@@ -21,8 +22,15 @@ export async function getAll<T>(collectionName: string): Promise<T[]> {
 
 export async function getAllOrdered<T>(collectionName: string, orderField: string = 'createdAt'): Promise<T[]> {
   const q = query(collection(db, collectionName), orderBy(orderField, 'desc'));
-  const snapshot = await getDocs(q);
-  return snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as T));
+  try {
+    const snapshot = await getDocsFromCache(q);
+    // Refresh Firestore's local cache in the background without delaying the POS.
+    void getDocs(q);
+    return snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as T));
+  } catch {
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as T));
+  }
 }
 
 export async function getById<T>(collectionName: string, id: string): Promise<T | null> {
@@ -50,6 +58,9 @@ export function stripUndefined(obj: any): any {
   if (obj === null || obj === undefined) return obj;
   if (Array.isArray(obj)) return obj.map(stripUndefined);
   if (typeof obj === 'object') {
+    // Return early for Date, Timestamp, FieldValue or any non-plain object
+    if (obj.constructor !== Object) return obj;
+
     const cleaned: any = {};
     for (const [k, v] of Object.entries(obj)) {
       if (v !== undefined) cleaned[k] = stripUndefined(v);

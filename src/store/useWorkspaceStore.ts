@@ -16,7 +16,7 @@ interface WorkspaceState {
 
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   tabs: INITIAL_TABS,
-  activeTabId: 'dashboard',
+  activeTabId: 'pos',
   openTab: (newTab) => {
     const existing = get().tabs.find((t) => t.id === newTab.id);
     if (existing) {

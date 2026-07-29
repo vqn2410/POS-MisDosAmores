@@ -179,20 +179,22 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
       const ticketNumber = await getNextTicketNumber();
       const primaryMethod = selectedMethod === 'MERCADOPAGO' ? 'MERCADOPAGO_QR' : selectedMethod === 'CUENTA_DNI' ? 'CUENTA_DNI' : selectedMethod;
 
-      let fiscalEvaluation;
-      try {
-        fiscalEvaluation = await FiscalRulesEngine.processFiscalEvaluation(primaryMethod, {
-          salesPoint: 1,
-          voucherType: 6,
-          concept: 1,
-          docType: customer.taxId ? 80 : 99,
-          docNumber: customer.taxId || '00000000',
-          subtotal: grandTotal,
-          taxTotal: 0,
-          grandTotal,
-        });
-      } catch {
-        fiscalEvaluation = null;
+      let fiscalEvaluation = null;
+      if (navigator.onLine) {
+        try {
+          fiscalEvaluation = await FiscalRulesEngine.processFiscalEvaluation(primaryMethod, {
+            salesPoint: 1,
+            voucherType: 6,
+            concept: 1,
+            docType: customer.taxId ? 80 : 99,
+            docNumber: customer.taxId || '00000000',
+            subtotal: grandTotal,
+            taxTotal: 0,
+            grandTotal,
+          });
+        } catch {
+          fiscalEvaluation = null;
+        }
       }
 
       const sale = completeSale(ticketNumber);
@@ -215,7 +217,9 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
 
       addNotification({
         title: 'Venta Procesada Exitosamente',
-        message: `Ticket ${sale.ticketNumber} - ${fiscalEvaluation?.fiscalResult ? 'Factura ARCA Emitida (CAE OK)' : 'Comprobante Interno Emitido'}`,
+        message: navigator.onLine
+          ? `Ticket ${sale.ticketNumber} - ${fiscalEvaluation?.fiscalResult ? 'Factura ARCA Emitida (CAE OK)' : 'Comprobante Interno Emitido'}`
+          : `Ticket ${sale.ticketNumber} guardado localmente. Se sincronizará al recuperar conexión.`,
         type: 'success',
       });
 

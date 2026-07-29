@@ -20,30 +20,32 @@ import { HotkeysListener } from './components/layout/HotkeysListener';
 import { MobileNavBar } from './components/layout/MobileNavBar';
 
 // Feature Views
-import { DashboardView } from './features/dashboard/DashboardView';
 import { POSView } from './features/pos/POSView';
 import { MobilePOSView } from './features/pos/components/MobilePOSView';
 import { QuickSaleView } from './features/pos/components/QuickSaleView';
-import { ProductsView } from './features/products/ProductsView';
-import { InventoryView } from './features/inventory/InventoryView';
-import { CustomersView } from './features/customers/CustomersView';
-import { SuppliersView } from './features/suppliers/SuppliersView';
-import { PurchasesView } from './features/purchases/PurchasesView';
-import { BillingView } from './features/billing/BillingView';
-import { CashView } from './features/cash/CashView';
-import { ReportsView } from './features/reports/ReportsView';
-import { UsersView } from './features/users/UsersView';
-import { SettingsView } from './features/settings/SettingsView';
-import { AuditLogsView } from './features/logs/AuditLogsView';
-import { IntegrationsView } from './features/integrations/IntegrationsView';
-import { AccessibilityView } from './features/accessibility/AccessibilityView';
-import { CameraScannerModal } from './features/scanner/components/CameraScannerModal';
 import { ProductNotFoundAlert } from './features/pos/components/ProductNotFoundAlert';
 import { LoginModal } from './features/auth/components/LoginModal';
 import { usePOSStore } from './features/pos/store/usePOSStore';
 import { parseQuickVariableProduct } from './features/pos/utils/parseQuickVariableProduct';
 import { useNotificationStore } from './store/useNotificationStore';
 import { useAccessibilityStore } from './store/useAccessibilityStore';
+
+const DashboardView = React.lazy(async () => ({ default: (await import('./features/dashboard/DashboardView')).DashboardView }));
+const ProductsView = React.lazy(async () => ({ default: (await import('./features/products/ProductsView')).ProductsView }));
+const StockView = React.lazy(async () => ({ default: (await import('./features/stock/StockView')).StockView }));
+const InventoryView = React.lazy(async () => ({ default: (await import('./features/inventory/InventoryView')).InventoryView }));
+const CustomersView = React.lazy(async () => ({ default: (await import('./features/customers/CustomersView')).CustomersView }));
+const SuppliersView = React.lazy(async () => ({ default: (await import('./features/suppliers/SuppliersView')).SuppliersView }));
+const PurchasesView = React.lazy(async () => ({ default: (await import('./features/purchases/PurchasesView')).PurchasesView }));
+const BillingView = React.lazy(async () => ({ default: (await import('./features/billing/BillingView')).BillingView }));
+const CashView = React.lazy(async () => ({ default: (await import('./features/cash/CashView')).CashView }));
+const ReportsView = React.lazy(async () => ({ default: (await import('./features/reports/ReportsView')).ReportsView }));
+const UsersView = React.lazy(async () => ({ default: (await import('./features/users/UsersView')).UsersView }));
+const SettingsView = React.lazy(async () => ({ default: (await import('./features/settings/SettingsView')).SettingsView }));
+const AuditLogsView = React.lazy(async () => ({ default: (await import('./features/logs/AuditLogsView')).AuditLogsView }));
+const IntegrationsView = React.lazy(async () => ({ default: (await import('./features/integrations/IntegrationsView')).IntegrationsView }));
+const AccessibilityView = React.lazy(async () => ({ default: (await import('./features/accessibility/AccessibilityView')).AccessibilityView }));
+const CameraScannerModal = React.lazy(async () => ({ default: (await import('./features/scanner/components/CameraScannerModal')).CameraScannerModal }));
 
 export const App: React.FC = () => {
   return (
@@ -245,6 +247,8 @@ const AppContent: React.FC = () => {
         return <POSView />;
       case 'products':
         return <ProductsView />;
+      case 'stock':
+        return <StockView />;
       case 'inventory':
         return <InventoryView />;
       case 'customers':
@@ -319,7 +323,11 @@ const AppContent: React.FC = () => {
             <Box sx={{ display: { xs: 'none', md: 'block' } }}>
               <OpenTicketsBar />
             </Box>
-            <Box sx={{ flexGrow: 1, overflowY: 'auto' }}>{renderActiveView()}</Box>
+            <Box sx={{ flexGrow: 1, overflowY: 'auto' }}>
+              <React.Suspense fallback={<Box sx={{ display: 'grid', placeItems: 'center', height: '100%' }}><CircularProgress /></Box>}>
+                {renderActiveView()}
+              </React.Suspense>
+            </Box>
           </Box>
         </Box>
 
@@ -332,11 +340,15 @@ const AppContent: React.FC = () => {
         </Box>
 
         {/* Camera Barcode Scanner Modal */}
-        <CameraScannerModal
-          open={isScannerOpen}
-          onClose={() => setIsScannerOpen(false)}
-          onDetected={handleScannerDetectedCode}
-        />
+        {isScannerOpen && (
+          <React.Suspense fallback={null}>
+            <CameraScannerModal
+              open={isScannerOpen}
+              onClose={() => setIsScannerOpen(false)}
+              onDetected={handleScannerDetectedCode}
+            />
+          </React.Suspense>
+        )}
         <ProductNotFoundAlert code={missingProductCode} onClose={() => setMissingProductCode(null)} />
       </Box>
     </ThemeProvider>

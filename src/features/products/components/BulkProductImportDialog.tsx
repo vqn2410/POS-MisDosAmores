@@ -7,6 +7,8 @@ import {
   DialogContent,
   DialogTitle,
   Divider,
+  Stack,
+  TextField,
   Typography,
 } from '@mui/material';
 import { Download, FileUp, Upload } from 'lucide-react';
@@ -23,6 +25,12 @@ interface BulkProductImportDialogProps {
 }
 
 type CsvRow = Record<string, string>;
+
+interface RejectedRow {
+  rowNumber: number;
+  row: CsvRow;
+  reason: string;
+}
 
 const normalizeHeader = (header: string) => {
   const normalized = header
@@ -91,12 +99,14 @@ export const BulkProductImportDialog: React.FC<BulkProductImportDialogProps> = (
   const queryClient = useQueryClient();
   const { addNotification } = useNotificationStore();
   const [pendingProducts, setPendingProducts] = React.useState<Omit<Product, 'id'>[]>([]);
+  const [rejectedRows, setRejectedRows] = React.useState<RejectedRow[]>([]);
   const [error, setError] = React.useState('');
   const [fileName, setFileName] = React.useState('');
   const [isImporting, setIsImporting] = React.useState(false);
 
   const reset = () => {
     setPendingProducts([]);
+    setRejectedRows([]);
     setError('');
     setFileName('');
     if (inputRef.current) inputRef.current.value = '';
@@ -128,55 +138,65 @@ export const BulkProductImportDialog: React.FC<BulkProductImportDialogProps> = (
       const importedBarcodes = new Set<string>();
       const now = new Date().toISOString();
 
-      const parsedProducts = rows.map((row, index) => {
+      const parsedProducts: Omit<Product, 'id'>[] = [];
+      const invalidRows: RejectedRow[] = [];
+
+      rows.forEach((row, index) => {
         const rowNumber = index + 2;
-        const barcode = row.codigo_barras?.trim() || row.sku?.trim() || '';
-        const sku = barcode;
-        const name = row.nombre.trim();
-        if (!barcode || !name) throw new Error(`Fila ${rowNumber}: código de barras (o SKU) y nombre son obligatorios.`);
-        if (existingSkus.has(sku.toLowerCase()) || importedSkus.has(sku.toLowerCase())) throw new Error(`Fila ${rowNumber}: el SKU "${sku}" ya existe.`);
-        if (barcode && (existingBarcodes.has(barcode) || importedBarcodes.has(barcode))) throw new Error(`Fila ${rowNumber}: el código de barras "${barcode}" ya existe.`);
+        try {
+          const barcode = row.codigo_barras?.trim() || row.sku?.trim() || '';
+          const sku = barcode;
+          const name = row.nombre?.trim() || '';
+          if (!barcode || !name) throw new Error('código de barras (o SKU) y nombre son obligatorios.');
+          if (existingSkus.has(sku.toLowerCase()) || importedSkus.has(sku.toLowerCase())) throw new Error(`el SKU "${sku}" ya existe.`);
+          if (existingBarcodes.has(barcode) || importedBarcodes.has(barcode)) throw new Error(`el código de barras "${barcode}" ya existe.`);
 
-        const saleType = (row.tipo_venta || 'UNIT').trim().toUpperCase() as SaleType;
-        if (!['UNIT', 'WEIGHT', 'VARIABLE'].includes(saleType)) throw new Error(`Fila ${rowNumber}: tipo_venta debe ser UNIT, WEIGHT o VARIABLE.`);
-        const cashBoxType = (row.caja || 'KIOSK').trim().toUpperCase() as CashBoxType;
-        if (!['KIOSK', 'CIGARRILLOS'].includes(cashBoxType)) throw new Error(`Fila ${rowNumber}: caja debe ser KIOSK o CIGARRILLOS.`);
+          const saleType = (row.tipo_venta || 'UNIT').trim().toUpperCase() as SaleType;
+          if (!['UNIT', 'WEIGHT', 'VARIABLE'].includes(saleType)) throw new Error('tipo_venta debe ser UNIT, WEIGHT o VARIABLE.');
+          const cashBoxType = (row.caja || 'KIOSK').trim().toUpperCase() as CashBoxType;
+          if (!['KIOSK', 'CIGARRILLOS'].includes(cashBoxType)) throw new Error('caja debe ser KIOSK o CIGARRILLOS.');
 
-        const categoryValue = (row.categoria || '').trim().toLowerCase();
-        const category = categories.find((item) => item.id.toLowerCase() === categoryValue || item.name.toLowerCase() === categoryValue) || categories[0];
-        const activeValue = (row.activo || 'SI').trim().toUpperCase();
-        if (!['SI', 'NO', 'TRUE', 'FALSE', '1', '0'].includes(activeValue)) throw new Error(`Fila ${rowNumber}: activo debe ser SI o NO.`);
+          const categoryValue = (row.categoria || '').trim().toLowerCase();
+          const category = categories.find((item) => item.id.toLowerCase() === categoryValue || item.name.toLowerCase() === categoryValue) || categories[0];
+          const activeValue = (row.activo || 'SI').trim().toUpperCase();
+          if (!['SI', 'NO', 'TRUE', 'FALSE', '1', '0'].includes(activeValue)) throw new Error('activo debe ser SI o NO.');
 
-        importedSkus.add(sku.toLowerCase());
-        if (barcode) importedBarcodes.add(barcode);
+          const product = {
+            sku,
+            barcode,
+            name,
+            description: row.descripcion?.trim() || '',
+            categoryId: category?.id || 'cat-01',
+            categoryName: category?.name || 'General',
+            costPrice: parseNumber(row.costo || '', 'costo', rowNumber, true),
+            salePrice: parseNumber(row.precio_venta || '', 'precio_venta', rowNumber, true),
+            stock: parseNumber(row.stock || '', 'stock', rowNumber),
+            minStock: parseNumber(row.stock_minimo || '', 'stock_minimo', rowNumber),
+            taxRate: parseNumber(row.impuesto || '', 'impuesto', rowNumber),
+            unit: row.unidad?.trim() || 'unidad',
+            tracksStock: (row.controla_stock || 'SI').trim().toUpperCase() !== 'NO',
+            saleType,
+            cashBoxType,
+            isActive: ['SI', 'TRUE', '1'].includes(activeValue),
+            createdAt: now,
+            updatedAt: now,
+          };
 
-        return {
-          sku,
-          barcode,
-          name,
-          description: row.descripcion.trim(),
-          categoryId: category?.id || 'cat-01',
-          categoryName: category?.name || 'General',
-          costPrice: parseNumber(row.costo, 'costo', rowNumber, true),
-          salePrice: parseNumber(row.precio_venta, 'precio_venta', rowNumber, true),
-          stock: parseNumber(row.stock, 'stock', rowNumber),
-          minStock: parseNumber(row.stock_minimo, 'stock_minimo', rowNumber),
-          taxRate: parseNumber(row.impuesto, 'impuesto', rowNumber),
-          unit: row.unidad.trim() || 'unidad',
-          tracksStock: (row.controla_stock || 'SI').trim().toUpperCase() !== 'NO',
-          saleType,
-          cashBoxType,
-          isActive: ['SI', 'TRUE', '1'].includes(activeValue),
-          createdAt: now,
-          updatedAt: now,
-        };
+          importedSkus.add(sku.toLowerCase());
+          importedBarcodes.add(barcode);
+          parsedProducts.push(product);
+        } catch (rowError) {
+          invalidRows.push({ rowNumber, row, reason: rowError instanceof Error ? rowError.message : 'Datos inválidos.' });
+        }
       });
 
       setPendingProducts(parsedProducts);
+      setRejectedRows(invalidRows);
       setError('');
       setFileName(file.name);
     } catch (caughtError) {
       setPendingProducts([]);
+      setRejectedRows([]);
       setFileName(file.name);
       setError(caughtError instanceof Error ? caughtError.message : 'No se pudo leer el archivo CSV.');
     }
@@ -186,10 +206,14 @@ export const BulkProductImportDialog: React.FC<BulkProductImportDialogProps> = (
     setIsImporting(true);
     try {
       const chunkSize = 20;
+      const importedProducts: Product[] = [];
       for (let index = 0; index < pendingProducts.length; index += chunkSize) {
-        await Promise.all(pendingProducts.slice(index, index + chunkSize).map((product) => firestore.create<Product>('products', product)));
+        const chunk = pendingProducts.slice(index, index + chunkSize);
+        const ids = await Promise.all(chunk.map((product) => firestore.create<Product>('products', product)));
+        importedProducts.push(...chunk.map((product, productIndex) => ({ ...product, id: ids[productIndex] })));
       }
-      await queryClient.invalidateQueries({ queryKey: ['products'] });
+      queryClient.setQueryData<Product[]>(['products'], (current = []) => [...importedProducts.reverse(), ...current]);
+      await queryClient.invalidateQueries({ queryKey: ['products'], refetchType: 'none' });
       addNotification({ title: 'Importación completada', message: `${pendingProducts.length} productos fueron agregados al catálogo.`, type: 'success' });
       setIsImporting(false);
       reset();
@@ -198,6 +222,48 @@ export const BulkProductImportDialog: React.FC<BulkProductImportDialogProps> = (
       setError(caughtError instanceof Error ? caughtError.message : 'No se pudieron guardar los productos.');
     } finally {
       setIsImporting(false);
+    }
+  };
+
+  const addQueuedProduct = (index: number) => {
+    const queued = rejectedRows[index];
+    if (!queued) return;
+
+    try {
+      const barcode = queued.row.codigo_barras?.trim() || queued.row.sku?.trim() || '';
+      const name = queued.row.nombre?.trim() || '';
+      if (!barcode || !name) throw new Error('Completá código y nombre.');
+      if (products.some((product) => product.sku.trim().toLowerCase() === barcode.toLowerCase() || product.barcode.trim() === barcode) || pendingProducts.some((product) => product.sku.toLowerCase() === barcode.toLowerCase())) {
+        throw new Error('El código ya existe en el catálogo o en esta importación.');
+      }
+
+      const categoryValue = (queued.row.categoria || '').trim().toLowerCase();
+      const category = categories.find((item) => item.id.toLowerCase() === categoryValue || item.name.toLowerCase() === categoryValue) || categories[0];
+      const now = new Date().toISOString();
+      const product: Omit<Product, 'id'> = {
+        sku: barcode,
+        barcode,
+        name,
+        description: queued.row.descripcion?.trim() || '',
+        categoryId: category?.id || 'cat-01',
+        categoryName: category?.name || 'General',
+        costPrice: parseNumber(queued.row.costo || '0', 'costo', queued.rowNumber, true),
+        salePrice: parseNumber(queued.row.precio_venta || '', 'precio_venta', queued.rowNumber, true),
+        stock: parseNumber(queued.row.stock || '0', 'stock', queued.rowNumber),
+        minStock: parseNumber(queued.row.stock_minimo || '0', 'stock_minimo', queued.rowNumber),
+        taxRate: parseNumber(queued.row.impuesto || '0', 'impuesto', queued.rowNumber),
+        unit: queued.row.unidad?.trim() || 'unidad',
+        tracksStock: (queued.row.controla_stock || 'SI').trim().toUpperCase() !== 'NO',
+        saleType: ['WEIGHT', 'VARIABLE'].includes((queued.row.tipo_venta || '').trim().toUpperCase()) ? (queued.row.tipo_venta.trim().toUpperCase() as SaleType) : 'UNIT',
+        cashBoxType: queued.row.caja?.trim().toUpperCase() === 'CIGARRILLOS' ? 'CIGARRILLOS' : 'KIOSK',
+        isActive: !['NO', 'FALSE', '0'].includes((queued.row.activo || 'SI').trim().toUpperCase()),
+        createdAt: now,
+        updatedAt: now,
+      };
+      setPendingProducts((current) => [...current, product]);
+      setRejectedRows((current) => current.filter((_, itemIndex) => itemIndex !== index));
+    } catch (caughtError) {
+      setRejectedRows((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, reason: caughtError instanceof Error ? caughtError.message : 'Datos inválidos.' } : item));
     }
   };
 
@@ -218,6 +284,26 @@ export const BulkProductImportDialog: React.FC<BulkProductImportDialogProps> = (
         </Button>
         {fileName && <Typography variant="body2" sx={{ mt: 1.5, fontWeight: 700 }}>{fileName}</Typography>}
         {pendingProducts.length > 0 && <Alert severity="success" sx={{ mt: 2 }}>{pendingProducts.length} productos listos para importar.</Alert>}
+        {rejectedRows.length > 0 && (
+          <Alert severity="warning" sx={{ mt: 2 }}>
+            {rejectedRows.length} filas quedaron en cola para revisión. Podés importar las válidas ahora y completar estas filas manualmente sin volver a cargar el archivo.
+          </Alert>
+        )}
+        {rejectedRows.length > 0 && (
+          <Stack spacing={1.5} sx={{ mt: 2, maxHeight: 300, overflow: 'auto' }}>
+            {rejectedRows.map(({ rowNumber, row, reason }, index) => (
+              <Stack key={rowNumber} spacing={1} sx={{ p: 1.5, border: '1px solid', borderColor: 'warning.light', borderRadius: 1 }}>
+                <Typography variant="body2" sx={{ fontWeight: 700 }}>Fila {rowNumber}: {reason}</Typography>
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                  <TextField size="small" label="Código" value={row.codigo_barras || row.sku || ''} onChange={(event) => setRejectedRows((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, row: { ...item.row, codigo_barras: event.target.value, sku: event.target.value } } : item))} />
+                  <TextField size="small" label="Nombre" fullWidth value={row.nombre || ''} onChange={(event) => setRejectedRows((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, row: { ...item.row, nombre: event.target.value } } : item))} />
+                  <TextField size="small" label="Precio" value={row.precio_venta || ''} onChange={(event) => setRejectedRows((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, row: { ...item.row, precio_venta: event.target.value } } : item))} />
+                  <Button variant="outlined" onClick={() => addQueuedProduct(index)}>Agregar</Button>
+                </Stack>
+              </Stack>
+            ))}
+          </Stack>
+        )}
         {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
       </DialogContent>
       <DialogActions sx={{ p: 2, gap: 1 }}>

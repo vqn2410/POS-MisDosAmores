@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
 import { getAnalytics, isSupported } from 'firebase/analytics';
 
 const firebaseConfig = {
@@ -18,7 +18,10 @@ export const app = initializeApp(firebaseConfig);
 
 // Firebase Services
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+// Keep the catalog and pending writes on the device so the POS can continue operating offline.
+export const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+});
 
 // Initialize Analytics conditionally for SSR/Environment safety
 export const analyticsPromise = isSupported()

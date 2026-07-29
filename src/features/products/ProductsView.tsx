@@ -15,35 +15,46 @@ import {
   IconButton,
   Tooltip,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  TablePagination,
 } from '@mui/material';
-import { Plus, Search, Edit2, Trash2, Filter, Upload, PackagePlus, AlertTriangle } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Filter, Upload, PackagePlus, Tags } from 'lucide-react';
 import { ProductImage } from '../../components/common/ProductImage';
 import type { Product } from '../../types';
 import { useProducts, useDeleteProduct } from '../../hooks/useProducts';
 import { ProductDrawerEditor } from './components/ProductDrawerEditor';
 import { BulkProductImportDialog } from './components/BulkProductImportDialog';
-import { useCategories } from '../../hooks/useCategories';
+import { useCategories, useCreateCategory } from '../../hooks/useCategories';
 import { StockEntryDialog } from './components/StockEntryDialog';
+import { useNotificationStore } from '../../store/useNotificationStore';
 
 export const ProductsView: React.FC = () => {
   const { data: products = [], isLoading } = useProducts();
   const deleteProduct = useDeleteProduct();
   const { data: categories = [] } = useCategories();
+  const createCategory = useCreateCategory();
+  const { addNotification } = useNotificationStore();
   const [searchTerm, setSearchTerm] = React.useState('');
   const [selectedProduct, setSelectedProduct] = React.useState<Product | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = React.useState(false);
   const [isImportOpen, setIsImportOpen] = React.useState(false);
   const [stockProduct, setStockProduct] = React.useState<Product | null>(null);
   const [isStockDialogOpen, setIsStockDialogOpen] = React.useState(false);
-
-  const lowStockProducts = products.filter((product) => product.tracksStock !== false && product.stock <= product.minStock);
+  const [page, setPage] = React.useState(0);
+  const [isCategoryDialogOpen, setIsCategoryDialogOpen] = React.useState(false);
+  const [categoryName, setCategoryName] = React.useState('');
+  const [categoryDescription, setCategoryDescription] = React.useState('');
 
   const filteredProducts = products.filter(
-    (p) =>
-      p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      p.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      p.barcode.includes(searchTerm)
+      (p) =>
+        (p.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (p.sku || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (p.barcode || '').includes(searchTerm)
   );
+  const displayedProducts = filteredProducts.slice(page * 20, page * 20 + 20);
 
   const handleOpenCreate = () => {
     setSelectedProduct(null);
@@ -57,6 +68,24 @@ export const ProductsView: React.FC = () => {
 
   const handleDeleteProduct = (id: string) => {
     deleteProduct.mutate(id);
+  };
+
+  const handleCreateCategory = async () => {
+    const name = categoryName.trim();
+    if (!name) return;
+    if (categories.some((category) => category.name.toLowerCase() === name.toLowerCase())) {
+      addNotification({ title: 'Categoría existente', message: 'Ya existe una categoría con ese nombre.', type: 'warning' });
+      return;
+    }
+    try {
+      await createCategory.mutateAsync({ name, description: categoryDescription.trim() || undefined });
+      addNotification({ title: 'Categoría creada', message: `${name} ya está disponible para asignar a productos.`, type: 'success' });
+      setCategoryName('');
+      setCategoryDescription('');
+      setIsCategoryDialogOpen(false);
+    } catch {
+      addNotification({ title: 'Error', message: 'No se pudo crear la categoría.', type: 'error' });
+    }
   };
 
   if (isLoading) {
@@ -80,6 +109,9 @@ export const ProductsView: React.FC = () => {
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 1.5 }}>
+          <Button variant="outlined" startIcon={<Tags size={20} />} onClick={() => setIsCategoryDialogOpen(true)} sx={{ borderRadius: 3, fontWeight: 800, minHeight: 48, px: 2.5 }}>
+            Categorías
+          </Button>
           <Button variant="contained" color="success" startIcon={<PackagePlus size={20} />} onClick={() => { setStockProduct(null); setIsStockDialogOpen(true); }} sx={{ borderRadius: 3, fontWeight: 800, minHeight: 48, px: 2.5 }}>
             Agregar stock
           </Button>
@@ -98,29 +130,16 @@ export const ProductsView: React.FC = () => {
         </Box>
       </Box>
 
-      {lowStockProducts.length > 0 && (
-        <Paper sx={{ p: 2.5, mb: 3, borderRadius: 4, bgcolor: '#FFF7ED', border: '2px solid #FDBA74' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
-            <AlertTriangle size={22} color="#C2410C" />
-            <Typography variant="h6" sx={{ fontWeight: 900, color: '#9A3412' }}>Productos con stock bajo ({lowStockProducts.length})</Typography>
-          </Box>
-          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-            {lowStockProducts.map((product) => (
-              <Button key={product.id} variant="outlined" color="warning" onClick={() => { setStockProduct(product); setIsStockDialogOpen(true); }} sx={{ textTransform: 'none', fontWeight: 800, borderRadius: 2 }}>
-                {product.name}: {product.stock}/{product.minStock} {product.unit} · Agregar stock
-              </Button>
-            ))}
-          </Box>
-        </Paper>
-      )}
-
       {/* Filter Bar */}
       <Paper elevation={1} sx={{ p: 2.5, mb: 3, borderRadius: 4, border: '2px solid', borderColor: '#E2E8F0', bgcolor: '#FFFFFF', display: 'flex', gap: 2, alignItems: 'center' }}>
         <TextField
           size="medium"
           placeholder="Buscar por nombre o código de barras..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
+            value={searchTerm}
+            onChange={(e) => {
+              setSearchTerm(e.target.value);
+              setPage(0);
+            }}
           sx={{ flexGrow: 1 }}
           slotProps={{
             input: {
@@ -157,7 +176,7 @@ export const ProductsView: React.FC = () => {
             </TableRow>
           </TableHead>
           <TableBody>
-            {filteredProducts.map((p) => (
+            {displayedProducts.map((p) => (
               <TableRow key={p.id} hover sx={{ minHeight: 64 }}>
                 <TableCell>
                   <ProductImage src={p.imageUrl} alt={p.name} size={44} variant="avatar" />
@@ -206,12 +225,34 @@ export const ProductsView: React.FC = () => {
             ))}
           </TableBody>
         </Table>
+        <TablePagination
+          component="div"
+          count={filteredProducts.length}
+          page={page}
+          onPageChange={(_, nextPage) => setPage(nextPage)}
+          rowsPerPage={20}
+          rowsPerPageOptions={[20]}
+          labelDisplayedRows={({ from, to, count }) => `${from}-${to} de ${count}`}
+        />
       </Paper>
 
       {/* Editor Drawer */}
       <ProductDrawerEditor product={selectedProduct} open={isDrawerOpen} onClose={() => setIsDrawerOpen(false)} />
       <BulkProductImportDialog open={isImportOpen} onClose={() => setIsImportOpen(false)} products={products} categories={categories} />
       <StockEntryDialog open={isStockDialogOpen} onClose={() => setIsStockDialogOpen(false)} products={products} initialProduct={stockProduct} />
+      <Dialog open={isCategoryDialogOpen} onClose={() => !createCategory.isPending && setIsCategoryDialogOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontWeight: 900 }}>Crear categoría</DialogTitle>
+        <DialogContent sx={{ display: 'grid', gap: 2, pt: 2 }}>
+          <TextField autoFocus label="Nombre" value={categoryName} onChange={(event) => setCategoryName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void handleCreateCategory(); }} />
+          <TextField label="Descripción (opcional)" multiline minRows={2} value={categoryDescription} onChange={(event) => setCategoryDescription(event.target.value)} />
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setIsCategoryDialogOpen(false)} disabled={createCategory.isPending}>Cancelar</Button>
+          <Button variant="contained" onClick={() => void handleCreateCategory()} disabled={!categoryName.trim() || createCategory.isPending}>
+            {createCategory.isPending ? 'Guardando...' : 'Crear categoría'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };
