@@ -31,6 +31,7 @@ import {
   Store,
   MoreVertical,
   Store as StoreIcon,
+  PackagePlus,
 } from 'lucide-react';
 import { usePOSStore } from './store/usePOSStore';
 import { useNotificationStore } from '../../store/useNotificationStore';
@@ -46,6 +47,7 @@ import { POSTicketPrintModal } from './components/POSTicketPrintModal';
 import { ProductNotFoundAlert } from './components/ProductNotFoundAlert';
 import { parseQuickVariableProduct } from './utils/parseQuickVariableProduct';
 import { calculateCartTotals } from './utils/calculateCartTotals';
+import { POSStockEntryModal } from './components/POSStockEntryModal';
 
 
 export const POSView: React.FC = () => {
@@ -82,6 +84,7 @@ export const POSView: React.FC = () => {
   const [missingProductCode, setMissingProductCode] = React.useState<string | null>(null);
   const [discountTarget, setDiscountTarget] = React.useState<'GLOBAL' | string | null>(null);
   const [discountValue, setDiscountValue] = React.useState('');
+  const [isStockEntryOpen, setIsStockEntryOpen] = React.useState(false);
 
   const searchInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -680,6 +683,16 @@ export const POSView: React.FC = () => {
       </Paper>
 
       <Box sx={{ display: 'flex', gap: 0.75, p: 0.75, bgcolor: '#ECECEC', borderTop: '1px solid #FFFFFF' }}>
+        <Button
+          fullWidth
+          size="large"
+          variant="contained"
+          onClick={() => setIsStockEntryOpen(true)}
+          startIcon={<PackagePlus size={20} />}
+          sx={{ py: 1, borderRadius: 0.5, fontWeight: 800, fontSize: '1rem', minHeight: 42, bgcolor: '#E8F5E9', color: '#123D16', border: '1px solid #26702A', boxShadow: 'none', '&:hover': { bgcolor: '#D2EBD4' } }}
+        >
+          Agregar stock
+        </Button>
         {/* 1. Cobrar (Solid Vibrant Blue) */}
         <Button
           fullWidth
@@ -820,6 +833,7 @@ export const POSView: React.FC = () => {
       <POSSuspendedModal open={isSuspendedModalOpen} onClose={() => setIsSuspendedModalOpen(false)} />
       <POSTicketPrintModal sale={lastCompletedSale} onClose={() => setLastCompletedSale(null)} />
       <ProductNotFoundAlert code={missingProductCode} onClose={() => setMissingProductCode(null)} />
+      <POSStockEntryModal open={isStockEntryOpen} onClose={() => setIsStockEntryOpen(false)} products={products} />
 
       <Dialog open={Boolean(discountTarget)} onClose={() => setDiscountTarget(null)} maxWidth="xs" fullWidth>
         <DialogTitle sx={{ fontWeight: 900 }}>
