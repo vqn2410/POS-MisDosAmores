@@ -124,7 +124,7 @@ export const POSView: React.FC = () => {
     }
   }, [isPaymentModalOpen, focusSearchInput]);
 
-  // Keyboard Shortcuts Listener (F4 = Cobrar, F2 = Cliente, F6 = Suspender, B = Buscar)
+  // Keyboard Shortcuts Listener (F4 = Cobrar, F2 = Cliente, F6 = Suspender, Ctrl+B = Buscar)
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
@@ -138,7 +138,7 @@ export const POSView: React.FC = () => {
       } else if (e.key === 'F6') {
         e.preventDefault();
         if (cart.length > 0) suspendSale();
-      } else if (e.key.toLowerCase() === 'b') {
+      } else if (e.ctrlKey && e.key.toLowerCase() === 'b') {
         e.preventDefault();
         setProductSearchTerm('');
         setSelectedSearchProduct(null);
@@ -887,7 +887,7 @@ export const POSView: React.FC = () => {
       <POSStockEntryModal open={isStockEntryOpen} onClose={() => { setIsStockEntryOpen(false); setStockEntryProduct(null); }} products={products} initialProduct={stockEntryProduct} />
 
       <Dialog open={isProductSearchOpen} onClose={() => setIsProductSearchOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle sx={{ fontWeight: 900 }}>Buscar productos (B)</DialogTitle>
+        <DialogTitle sx={{ fontWeight: 900 }}>Buscar productos (Ctrl+B)</DialogTitle>
         <DialogContent>
           <TextField
             autoFocus
