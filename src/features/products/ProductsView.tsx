@@ -16,13 +16,14 @@ import {
   Tooltip,
   CircularProgress,
 } from '@mui/material';
-import { Plus, Search, Edit2, Trash2, Filter, Upload } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Filter, Upload, PackagePlus, AlertTriangle } from 'lucide-react';
 import { ProductImage } from '../../components/common/ProductImage';
 import type { Product } from '../../types';
 import { useProducts, useDeleteProduct } from '../../hooks/useProducts';
 import { ProductDrawerEditor } from './components/ProductDrawerEditor';
 import { BulkProductImportDialog } from './components/BulkProductImportDialog';
 import { useCategories } from '../../hooks/useCategories';
+import { StockEntryDialog } from './components/StockEntryDialog';
 
 export const ProductsView: React.FC = () => {
   const { data: products = [], isLoading } = useProducts();
@@ -32,6 +33,10 @@ export const ProductsView: React.FC = () => {
   const [selectedProduct, setSelectedProduct] = React.useState<Product | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = React.useState(false);
   const [isImportOpen, setIsImportOpen] = React.useState(false);
+  const [stockProduct, setStockProduct] = React.useState<Product | null>(null);
+  const [isStockDialogOpen, setIsStockDialogOpen] = React.useState(false);
+
+  const lowStockProducts = products.filter((product) => product.tracksStock !== false && product.stock <= product.minStock);
 
   const filteredProducts = products.filter(
     (p) =>
@@ -75,6 +80,9 @@ export const ProductsView: React.FC = () => {
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 1.5 }}>
+          <Button variant="contained" color="success" startIcon={<PackagePlus size={20} />} onClick={() => { setStockProduct(null); setIsStockDialogOpen(true); }} sx={{ borderRadius: 3, fontWeight: 800, minHeight: 48, px: 2.5 }}>
+            Agregar stock
+          </Button>
           <Button variant="outlined" startIcon={<Upload size={20} />} onClick={() => setIsImportOpen(true)} sx={{ borderRadius: 3, fontWeight: 800, minHeight: 48, px: 2.5 }}>
             Importar CSV
           </Button>
@@ -89,6 +97,22 @@ export const ProductsView: React.FC = () => {
           </Button>
         </Box>
       </Box>
+
+      {lowStockProducts.length > 0 && (
+        <Paper sx={{ p: 2.5, mb: 3, borderRadius: 4, bgcolor: '#FFF7ED', border: '2px solid #FDBA74' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+            <AlertTriangle size={22} color="#C2410C" />
+            <Typography variant="h6" sx={{ fontWeight: 900, color: '#9A3412' }}>Productos con stock bajo ({lowStockProducts.length})</Typography>
+          </Box>
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+            {lowStockProducts.map((product) => (
+              <Button key={product.id} variant="outlined" color="warning" onClick={() => { setStockProduct(product); setIsStockDialogOpen(true); }} sx={{ textTransform: 'none', fontWeight: 800, borderRadius: 2 }}>
+                {product.name}: {product.stock}/{product.minStock} {product.unit} · Agregar stock
+              </Button>
+            ))}
+          </Box>
+        </Paper>
+      )}
 
       {/* Filter Bar */}
       <Paper elevation={1} sx={{ p: 2.5, mb: 3, borderRadius: 4, border: '2px solid', borderColor: '#E2E8F0', bgcolor: '#FFFFFF', display: 'flex', gap: 2, alignItems: 'center' }}>
@@ -167,6 +191,11 @@ export const ProductsView: React.FC = () => {
                       <Edit2 size={20} />
                     </IconButton>
                   </Tooltip>
+                  <Tooltip title="Agregar stock">
+                    <IconButton size="large" onClick={() => { setStockProduct(p); setIsStockDialogOpen(true); }} sx={{ color: '#15803D' }}>
+                      <PackagePlus size={20} />
+                    </IconButton>
+                  </Tooltip>
                   <Tooltip title="Eliminar Producto">
                     <IconButton size="large" color="error" onClick={() => handleDeleteProduct(p.id)}>
                       <Trash2 size={20} />
@@ -182,6 +211,7 @@ export const ProductsView: React.FC = () => {
       {/* Editor Drawer */}
       <ProductDrawerEditor product={selectedProduct} open={isDrawerOpen} onClose={() => setIsDrawerOpen(false)} />
       <BulkProductImportDialog open={isImportOpen} onClose={() => setIsImportOpen(false)} products={products} categories={categories} />
+      <StockEntryDialog open={isStockDialogOpen} onClose={() => setIsStockDialogOpen(false)} products={products} initialProduct={stockProduct} />
     </Box>
   );
 };
