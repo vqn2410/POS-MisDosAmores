@@ -32,6 +32,7 @@ import { WeightInputModal } from './WeightInputModal';
 import { VariableProductModal } from './VariableProductModal';
 import { POSPaymentModal } from './POSPaymentModal';
 import { POSTicketPrintModal } from './POSTicketPrintModal';
+import { ProductNotFoundAlert } from './ProductNotFoundAlert';
 import type { Sale } from '../../../types';
 
 interface MobilePOSViewProps {
@@ -57,6 +58,7 @@ export const MobilePOSView: React.FC<MobilePOSViewProps> = ({ onOpenScanner }) =
   const [weightModalProduct, setWeightModalProduct] = React.useState<Product | null>(null);
   const [isVariableModalOpen, setIsVariableModalOpen] = React.useState(false);
   const [lastCompletedSale, setLastCompletedSale] = React.useState<Sale | null>(null);
+  const [missingProductCode, setMissingProductCode] = React.useState<string | null>(null);
 
   const searchInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -111,6 +113,9 @@ export const MobilePOSView: React.FC<MobilePOSViewProps> = ({ onOpenScanner }) =
       setSearchTerm('');
       focusSearchInput();
     } else {
+      setMissingProductCode(trimmed);
+      setSearchTerm('');
+      focusSearchInput();
       addNotification({
         title: 'Producto no encontrado',
         message: `No se encontró producto para "${trimmed}"`,
@@ -305,6 +310,7 @@ export const MobilePOSView: React.FC<MobilePOSViewProps> = ({ onOpenScanner }) =
 
       <POSPaymentModal onPrintTicket={(sale) => setLastCompletedSale(sale)} />
       <POSTicketPrintModal sale={lastCompletedSale} onClose={() => setLastCompletedSale(null)} />
+      <ProductNotFoundAlert code={missingProductCode} onClose={() => setMissingProductCode(null)} />
     </Box>
   );
 };

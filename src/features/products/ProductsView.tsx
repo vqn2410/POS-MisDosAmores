@@ -16,18 +16,22 @@ import {
   Tooltip,
   CircularProgress,
 } from '@mui/material';
-import { Plus, Search, Edit2, Trash2, Filter } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Filter, Upload } from 'lucide-react';
 import { ProductImage } from '../../components/common/ProductImage';
 import type { Product } from '../../types';
 import { useProducts, useDeleteProduct } from '../../hooks/useProducts';
 import { ProductDrawerEditor } from './components/ProductDrawerEditor';
+import { BulkProductImportDialog } from './components/BulkProductImportDialog';
+import { useCategories } from '../../hooks/useCategories';
 
 export const ProductsView: React.FC = () => {
   const { data: products = [], isLoading } = useProducts();
   const deleteProduct = useDeleteProduct();
+  const { data: categories = [] } = useCategories();
   const [searchTerm, setSearchTerm] = React.useState('');
   const [selectedProduct, setSelectedProduct] = React.useState<Product | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = React.useState(false);
+  const [isImportOpen, setIsImportOpen] = React.useState(false);
 
   const filteredProducts = products.filter(
     (p) =>
@@ -70,15 +74,20 @@ export const ProductsView: React.FC = () => {
             Administración centralizada de inventario, código de barras y precios
           </Typography>
         </Box>
-        <Button
-          variant="contained"
-          color="primary"
-          startIcon={<Plus size={22} />}
-          onClick={handleOpenCreate}
-          sx={{ borderRadius: 3, fontWeight: 800, minHeight: 48, px: 3, fontSize: '1.05rem' }}
-        >
-          📦 Nuevo Producto
-        </Button>
+        <Box sx={{ display: 'flex', gap: 1.5 }}>
+          <Button variant="outlined" startIcon={<Upload size={20} />} onClick={() => setIsImportOpen(true)} sx={{ borderRadius: 3, fontWeight: 800, minHeight: 48, px: 2.5 }}>
+            Importar CSV
+          </Button>
+          <Button
+            variant="contained"
+            color="primary"
+            startIcon={<Plus size={22} />}
+            onClick={handleOpenCreate}
+            sx={{ borderRadius: 3, fontWeight: 800, minHeight: 48, px: 3, fontSize: '1.05rem' }}
+          >
+            📦 Nuevo Producto
+          </Button>
+        </Box>
       </Box>
 
       {/* Filter Bar */}
@@ -172,6 +181,7 @@ export const ProductsView: React.FC = () => {
 
       {/* Editor Drawer */}
       <ProductDrawerEditor product={selectedProduct} open={isDrawerOpen} onClose={() => setIsDrawerOpen(false)} />
+      <BulkProductImportDialog open={isImportOpen} onClose={() => setIsImportOpen(false)} products={products} categories={categories} />
     </Box>
   );
 };

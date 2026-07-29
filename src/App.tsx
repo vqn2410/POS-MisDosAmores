@@ -38,6 +38,7 @@ import { AuditLogsView } from './features/logs/AuditLogsView';
 import { IntegrationsView } from './features/integrations/IntegrationsView';
 import { AccessibilityView } from './features/accessibility/AccessibilityView';
 import { CameraScannerModal } from './features/scanner/components/CameraScannerModal';
+import { ProductNotFoundAlert } from './features/pos/components/ProductNotFoundAlert';
 import { LoginModal } from './features/auth/components/LoginModal';
 import { usePOSStore } from './features/pos/store/usePOSStore';
 import { parseQuickVariableProduct } from './features/pos/utils/parseQuickVariableProduct';
@@ -66,6 +67,7 @@ const AppContent: React.FC = () => {
   const [isScannerOpen, setIsScannerOpen] = React.useState(false);
   const [isQuickSaleMode, setIsQuickSaleMode] = React.useState(false);
   const [isLoginOpen, setIsLoginOpen] = React.useState(false);
+  const [missingProductCode, setMissingProductCode] = React.useState<string | null>(null);
 
   const currentTheme = React.useMemo(() => {
     const baseTheme = themeMode === 'dark' ? darkTheme : lightTheme;
@@ -220,6 +222,7 @@ const AppContent: React.FC = () => {
         if (!isQuickSaleMode) setIsScannerOpen(false);
       }
     } else {
+      setMissingProductCode(trimmed);
       addNotification({
         title: 'Producto no encontrado',
         message: `No se encontró producto para "${trimmed}"`,
@@ -334,6 +337,7 @@ const AppContent: React.FC = () => {
           onClose={() => setIsScannerOpen(false)}
           onDetected={handleScannerDetectedCode}
         />
+        <ProductNotFoundAlert code={missingProductCode} onClose={() => setMissingProductCode(null)} />
       </Box>
     </ThemeProvider>
   );

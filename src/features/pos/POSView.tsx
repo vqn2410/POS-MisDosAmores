@@ -39,6 +39,7 @@ import { VariableProductModal } from './components/VariableProductModal';
 import { POSPaymentModal } from './components/POSPaymentModal';
 import { POSSuspendedModal } from './components/POSSuspendedModal';
 import { POSTicketPrintModal } from './components/POSTicketPrintModal';
+import { ProductNotFoundAlert } from './components/ProductNotFoundAlert';
 import { parseQuickVariableProduct } from './utils/parseQuickVariableProduct';
 
 
@@ -70,6 +71,7 @@ export const POSView: React.FC = () => {
   const [isSuspendedModalOpen, setIsSuspendedModalOpen] = React.useState(false);
   const [lastCompletedSale, setLastCompletedSale] = React.useState<Sale | null>(null);
   const [isCustomerSelectOpen, setIsCustomerSelectOpen] = React.useState(false);
+  const [missingProductCode, setMissingProductCode] = React.useState<string | null>(null);
 
   const searchInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -170,6 +172,9 @@ export const POSView: React.FC = () => {
         }
         setSearchTerm('');
       } else {
+        setMissingProductCode(trimmed);
+        setSearchTerm('');
+        focusSearchInput();
         addNotification({
           title: 'Producto no encontrado',
           message: `No se encontró ningún producto para: "${trimmed}"`,
@@ -761,6 +766,7 @@ export const POSView: React.FC = () => {
       <POSPaymentModal onPrintTicket={(sale) => setLastCompletedSale(sale)} />
       <POSSuspendedModal open={isSuspendedModalOpen} onClose={() => setIsSuspendedModalOpen(false)} />
       <POSTicketPrintModal sale={lastCompletedSale} onClose={() => setLastCompletedSale(null)} />
+      <ProductNotFoundAlert code={missingProductCode} onClose={() => setMissingProductCode(null)} />
     </Box>
   );
 };
