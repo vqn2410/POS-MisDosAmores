@@ -212,6 +212,12 @@ export const POSView: React.FC = () => {
     focusSearchInput();
   };
 
+  const openStockEntry = () => {
+    setStockEntryProduct(outOfStockProduct);
+    setOutOfStockProduct(null);
+    setIsStockEntryOpen(true);
+  };
+
   const handleConfirmVariable = (quantity: number, unitPrice: number) => {
     addVariableProductToCart(quantity, unitPrice);
     setIsVariableModalOpen(false);
@@ -843,7 +849,12 @@ export const POSView: React.FC = () => {
       <ProductNotFoundAlert code={missingProductCode} onClose={() => setMissingProductCode(null)} />
       <POSStockEntryModal open={isStockEntryOpen} onClose={() => { setIsStockEntryOpen(false); setStockEntryProduct(null); }} products={products} initialProduct={stockEntryProduct} />
 
-      <Dialog open={Boolean(outOfStockProduct)} onClose={() => setOutOfStockProduct(null)} maxWidth="xs" fullWidth>
+      <Dialog open={Boolean(outOfStockProduct)} onClose={() => setOutOfStockProduct(null)} onKeyDown={(event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          openStockEntry();
+        }
+      }} maxWidth="xs" fullWidth>
         <DialogTitle sx={{ fontWeight: 900 }}>Producto sin stock</DialogTitle>
         <DialogContent>
           <Typography>
@@ -852,11 +863,7 @@ export const POSView: React.FC = () => {
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
           <Button onClick={() => setOutOfStockProduct(null)}>Cancelar</Button>
-          <Button variant="contained" color="success" startIcon={<PackagePlus size={18} />} onClick={() => {
-            setStockEntryProduct(outOfStockProduct);
-            setOutOfStockProduct(null);
-            setIsStockEntryOpen(true);
-          }}>
+          <Button variant="contained" color="success" startIcon={<PackagePlus size={18} />} onClick={openStockEntry}>
             Agregar stock
           </Button>
         </DialogActions>
