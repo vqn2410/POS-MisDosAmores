@@ -118,7 +118,7 @@ export const ProductsView: React.FC = () => {
       <Paper elevation={1} sx={{ p: 2.5, mb: 3, borderRadius: 4, border: '2px solid', borderColor: '#E2E8F0', bgcolor: '#FFFFFF', display: 'flex', gap: 2, alignItems: 'center' }}>
         <TextField
           size="medium"
-          placeholder="Buscar por Nombre, SKU o Código de Barras..."
+          placeholder="Buscar por nombre o código de barras..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           sx={{ flexGrow: 1 }}
@@ -144,7 +144,7 @@ export const ProductsView: React.FC = () => {
           <TableHead sx={{ bgcolor: '#F8FAFC' }}>
             <TableRow>
               <TableCell sx={{ fontWeight: 800, fontSize: '1rem' }}>Imagen</TableCell>
-              <TableCell sx={{ fontWeight: 800, fontSize: '1rem' }}>SKU / Código</TableCell>
+              <TableCell sx={{ fontWeight: 800, fontSize: '1rem' }}>Código de barras</TableCell>
               <TableCell sx={{ fontWeight: 800, fontSize: '1rem' }}>Nombre del Producto</TableCell>
               <TableCell sx={{ fontWeight: 800, fontSize: '1rem' }}>Categoría</TableCell>
               <TableCell sx={{ fontWeight: 800, fontSize: '1rem' }}>Costo</TableCell>
@@ -164,10 +164,10 @@ export const ProductsView: React.FC = () => {
                 </TableCell>
                 <TableCell>
                   <Typography variant="subtitle1" sx={{ fontWeight: 900, color: '#0F172A' }}>
-                    {p.sku}
+                    {p.barcode || p.sku}
                   </Typography>
                   <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, fontFamily: 'monospace' }}>
-                    {p.barcode}
+                    SKU: {p.barcode || p.sku}
                   </Typography>
                 </TableCell>
                 <TableCell sx={{ fontWeight: 800, fontSize: '1.05rem', color: '#0F172A' }}>{p.name}</TableCell>

@@ -1,4 +1,4 @@
-sku,codigo_barras,nombre,descripcion,categoria,costo,precio_venta,stock,stock_minimo,unidad,tipo_venta,caja,activo,controla_stock,impuesto
-KIO-001,7791234567890,Alfajor triple,Alfajor de chocolate,General,500,900,24,5,unidad,UNIT,KIOSK,SI,SI,0
-CIG-001,7791234567891,Cigarrillos 20 unidades,Atado de cigarrillos,General,1800,2500,10,3,unidad,UNIT,CIGARRILLOS,SI,SI,0
-PES-001,7791234567892,Queso cremoso,Venta por kilo,General,4500,6800,5,1,kg,WEIGHT,KIOSK,SI,SI,0
+codigo_barras,nombre,descripcion,categoria,costo,precio_venta,stock,stock_minimo,unidad,tipo_venta,caja,activo,controla_stock,impuesto
+7791234567890,Alfajor triple,Alfajor de chocolate,General,500,900,24,5,unidad,UNIT,KIOSK,SI,SI,0
+7791234567891,Cigarrillos 20 unidades,Atado de cigarrillos,General,1800,2500,10,3,unidad,UNIT,CIGARRILLOS,SI,SI,0
+7791234567892,Queso cremoso,Venta por kilo,General,4500,6800,5,1,kg,WEIGHT,KIOSK,SI,SI,0

@@ -11,6 +11,7 @@ import {
   Switch,
   FormControlLabel,
   Paper,
+  Alert,
 } from '@mui/material';
 import { X as CloseIcon, Save, Image as ImageIcon, Tag, DollarSign, Package, Truck } from 'lucide-react';
 import type { Product, SaleType, CashBoxType } from '../../../types';
@@ -60,14 +61,15 @@ export const ProductDrawerEditor: React.FC<ProductDrawerEditorProps> = ({ produc
 
   // Form State - Empty defaults when creating a new product
   const [formData, setFormData] = React.useState<Partial<Product>>({});
+  const [formError, setFormError] = React.useState('');
 
   React.useEffect(() => {
+    setFormError('');
     if (product) {
       setFormData(product);
     } else {
       // Clean empty state for new product creation (No dummy pre-filled values)
       setFormData({
-        sku: '',
         barcode: '',
         name: '',
         description: '',
@@ -89,15 +91,22 @@ export const ProductDrawerEditor: React.FC<ProductDrawerEditorProps> = ({ produc
   }, [product, open]);
 
   const handleChange = (field: keyof Product, value: any) => {
+    if (field === 'barcode') setFormError('');
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
   const handleFormSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
 
+    const barcode = formData.barcode?.trim() || '';
+    if (!barcode) {
+      setFormError('El código de barras es obligatorio. Se utilizará también como SKU.');
+      return;
+    }
+
     const preparedProduct: Omit<Product, 'id'> = {
-      sku: formData.sku?.trim() || `SKU-${Math.floor(1000 + Math.random() * 9000)}`,
-      barcode: formData.barcode?.trim() || '',
+      sku: barcode,
+      barcode,
       name: formData.name?.trim() || 'Producto Sin Nombre',
       description: formData.description?.trim() || '',
       categoryId: formData.categoryId || categories[0]?.id || 'cat-01',
@@ -162,6 +171,7 @@ export const ProductDrawerEditor: React.FC<ProductDrawerEditorProps> = ({ produc
 
       {/* Single Scrollable Form (All sections stacked vertically in one view) */}
       <Box component="form" onSubmit={handleFormSubmit} sx={{ px: { xs: 2, md: 5 }, py: 4, flexGrow: 1, overflowY: 'auto', bgcolor: '#FFFFFF', display: 'flex', flexDirection: 'column', gap: 3.5 }}>
+        {formError && <Alert severity="error" sx={{ fontWeight: 700 }}>{formError}</Alert>}
         {/* Section 1: Información General */}
         <Paper elevation={0} sx={{ p: { xs: 2.5, md: 3.5 }, bgcolor: '#F8FAFC', borderRadius: 3.5, border: '1px solid #E2E8F0' }}>
           <Typography variant="h6" sx={{ fontWeight: 900, mb: 3, color: '#2563EB', display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -169,23 +179,13 @@ export const ProductDrawerEditor: React.FC<ProductDrawerEditorProps> = ({ produc
           </Typography>
 
           <Grid container spacing={2.5}>
-            <Grid size={{ xs: 12, md: 6 }}>
+            <Grid size={{ xs: 12 }}>
               <TextField
                 fullWidth
                 size="small"
-                label="SKU / Clave Interna"
-                placeholder="Ej. NEX-PROD-01"
-                value={formData.sku || ''}
-                onChange={(e) => handleChange('sku', e.target.value)}
-                slotProps={{ input: inputSlotProps, inputLabel: labelSlotProps }}
-              />
-            </Grid>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <TextField
-                fullWidth
-                size="small"
-                label="Código de Barras"
-                placeholder="Ej. 750123456789"
+                required
+                label="Código de Barras (también será el SKU)"
+                placeholder="Ej. 7791234567890"
                 value={formData.barcode || ''}
                 onChange={(e) => handleChange('barcode', e.target.value)}
                 slotProps={{ input: inputSlotProps, inputLabel: labelSlotProps }}
