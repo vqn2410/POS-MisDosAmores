@@ -42,6 +42,28 @@ export const POSTicketPrintModal: React.FC<POSTicketPrintModalProps> = ({ sale, 
 
   return (
     <Dialog open={Boolean(sale)} onClose={onClose} maxWidth="xs" fullWidth slotProps={{ paper: { sx: { borderRadius: 4, p: 1 } } }}>
+      <style>{`
+        @media print {
+          @page { size: 58mm auto; margin: 0; }
+          body * { visibility: hidden !important; }
+          #printable-ticket, #printable-ticket * { visibility: visible !important; }
+          #printable-ticket {
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 48mm !important;
+            min-width: 48mm !important;
+            margin: 0 !important;
+            padding: 2mm !important;
+            border: 0 !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+            font-family: "Courier New", monospace !important;
+            font-size: 9px !important;
+            line-height: 1.25 !important;
+          }
+        }
+      `}</style>
       <DialogTitle sx={{ fontWeight: 900, textAlign: 'center', fontSize: '1.4rem' }}>
         <CheckCircle size={36} color="#16A34A" style={{ margin: '0 auto 8px', display: 'block' }} />
         ¡Venta Completada con Éxito!
@@ -52,11 +74,13 @@ export const POSTicketPrintModal: React.FC<POSTicketPrintModalProps> = ({ sale, 
         <Box
           id="printable-ticket"
           sx={{
-            p: 2.5,
+            width: '48mm',
+            boxSizing: 'border-box',
+            p: '2mm',
             bgcolor: '#FFF',
             color: '#000',
             fontFamily: 'monospace',
-            fontSize: '0.85rem',
+            fontSize: '0.78rem',
             borderRadius: 2,
             border: '2px dashed #94A3B8',
             boxShadow: '0 4px 10px rgba(0,0,0,0.05)',
@@ -111,7 +135,7 @@ export const POSTicketPrintModal: React.FC<POSTicketPrintModalProps> = ({ sale, 
             <span>${sale.subtotal.toFixed(2)}</span>
           </Box>
           <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span>IVA (16%):</span>
+            <span>Impuestos:</span>
             <span>${sale.taxTotal.toFixed(2)}</span>
           </Box>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', fontWeight: 900, fontSize: '1.1rem', mt: 1 }}>
