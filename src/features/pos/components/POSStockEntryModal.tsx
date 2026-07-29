@@ -9,9 +9,10 @@ interface POSStockEntryModalProps {
   open: boolean;
   onClose: () => void;
   products: Product[];
+  initialProduct?: Product | null;
 }
 
-export const POSStockEntryModal: React.FC<POSStockEntryModalProps> = ({ open, onClose, products }) => {
+export const POSStockEntryModal: React.FC<POSStockEntryModalProps> = ({ open, onClose, products, initialProduct = null }) => {
   const barcodeRef = React.useRef<HTMLInputElement>(null);
   const createKardex = useCreateKardexMovement();
   const { user, activeBranch } = useAuthStore();
@@ -22,13 +23,13 @@ export const POSStockEntryModal: React.FC<POSStockEntryModalProps> = ({ open, on
 
   React.useEffect(() => {
     if (open) {
-      setBarcode('');
-      setProduct(null);
+      setBarcode(initialProduct?.barcode || initialProduct?.sku || '');
+      setProduct(initialProduct);
       setQuantity('');
       setError('');
       window.setTimeout(() => barcodeRef.current?.focus(), 50);
     }
-  }, [open]);
+  }, [open, initialProduct]);
 
   const findProduct = () => {
     const code = barcode.trim();

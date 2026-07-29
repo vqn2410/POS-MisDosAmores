@@ -85,6 +85,8 @@ export const POSView: React.FC = () => {
   const [discountTarget, setDiscountTarget] = React.useState<'GLOBAL' | string | null>(null);
   const [discountValue, setDiscountValue] = React.useState('');
   const [isStockEntryOpen, setIsStockEntryOpen] = React.useState(false);
+  const [outOfStockProduct, setOutOfStockProduct] = React.useState<Product | null>(null);
+  const [stockEntryProduct, setStockEntryProduct] = React.useState<Product | null>(null);
 
   const searchInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -178,7 +180,9 @@ export const POSView: React.FC = () => {
       const targetProduct = exactMatch || fuzzyMatch;
 
       if (targetProduct) {
-        if (targetProduct.saleType === 'WEIGHT') {
+        if (targetProduct.tracksStock !== false && targetProduct.stock <= 0) {
+          setOutOfStockProduct(targetProduct);
+        } else if (targetProduct.saleType === 'WEIGHT') {
           setWeightModalProduct(targetProduct);
         } else {
           addProductToCart(targetProduct);
@@ -833,7 +837,26 @@ export const POSView: React.FC = () => {
       <POSSuspendedModal open={isSuspendedModalOpen} onClose={() => setIsSuspendedModalOpen(false)} />
       <POSTicketPrintModal sale={lastCompletedSale} onClose={() => setLastCompletedSale(null)} />
       <ProductNotFoundAlert code={missingProductCode} onClose={() => setMissingProductCode(null)} />
-      <POSStockEntryModal open={isStockEntryOpen} onClose={() => setIsStockEntryOpen(false)} products={products} />
+      <POSStockEntryModal open={isStockEntryOpen} onClose={() => { setIsStockEntryOpen(false); setStockEntryProduct(null); }} products={products} initialProduct={stockEntryProduct} />
+
+      <Dialog open={Boolean(outOfStockProduct)} onClose={() => setOutOfStockProduct(null)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontWeight: 900 }}>Producto sin stock</DialogTitle>
+        <DialogContent>
+          <Typography>
+            {outOfStockProduct?.name} no tiene existencias disponibles para la venta.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setOutOfStockProduct(null)}>Cancelar</Button>
+          <Button variant="contained" color="success" startIcon={<PackagePlus size={18} />} onClick={() => {
+            setStockEntryProduct(outOfStockProduct);
+            setOutOfStockProduct(null);
+            setIsStockEntryOpen(true);
+          }}>
+            Agregar stock
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={Boolean(discountTarget)} onClose={() => setDiscountTarget(null)} maxWidth="xs" fullWidth>
         <DialogTitle sx={{ fontWeight: 900 }}>
