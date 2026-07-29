@@ -389,7 +389,7 @@ export const POSView: React.FC = () => {
                 '&:hover': { bgcolor: '#E7F2FF' },
               }}
             >
-              Cambiar cliente
+              Cambiar cliente (F2)
             </Button>
           )}
         </Box>
@@ -727,7 +727,7 @@ export const POSView: React.FC = () => {
             '&:hover': { bgcolor: '#D2EBD4' },
           }}
         >
-          Cobrar
+          Cobrar (F4)
         </Button>
 
         {/* 2. % Descuento (Soft Blue) */}
@@ -773,7 +773,7 @@ export const POSView: React.FC = () => {
             '&:hover': { bgcolor: '#DBEAFE' },
           }}
         >
-          Cliente
+          Cliente (F2)
         </Button>
 
         {/* 4. Suspender (F6) (Soft Cream/Yellow) */}
