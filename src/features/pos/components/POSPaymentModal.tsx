@@ -70,17 +70,19 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
   const totalPaid = payments.reduce((acc, p) => acc + p.amount, 0);
   const pendingAmount = Math.max(0, grandTotal - totalPaid);
   const change = Math.max(0, totalPaid - grandTotal);
+  const enteredAmount = Number(payAmount.replace(',', '.')) || 0;
+  const changePreview = selectedMethod === 'CASH' ? Math.max(0, totalPaid + enteredAmount - grandTotal) : change;
 
   React.useEffect(() => {
     if (isPaymentModalOpen) {
-      setPayAmount(pendingAmount.toFixed(2));
+      setPayAmount('');
       setTimeout(() => amountRef.current?.focus(), 50);
     }
-  }, [isPaymentModalOpen, pendingAmount]);
+  }, [isPaymentModalOpen]);
 
   const handleSelectMethod = (method: ExtendedPaymentMethod) => {
     setSelectedMethod(method);
-    setPayAmount(pendingAmount.toFixed(2));
+    setPayAmount('');
 
     if (method === 'MERCADOPAGO') {
       setMpStatus('WAITING');
@@ -524,7 +526,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
                 <Button
                   variant="contained"
                   onClick={handleAddPayment}
-                  disabled={parseFloat(payAmount) <= 0 || isNaN(parseFloat(payAmount))}
+                  disabled={enteredAmount <= 0}
                   sx={{ height: 52, px: 3, borderRadius: 3, fontWeight: 900, fontSize: '1rem', minWidth: 120, bgcolor: '#2563EB', color: '#FFFFFF' }}
                 >
                   Agregar
@@ -586,7 +588,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
                   💵 CAMBIO A ENTREGAR:
                 </Typography>
                 <Typography variant="h2" sx={{ fontWeight: 900, color: '#15803D', fontSize: '2.5rem', mt: 0.5 }}>
-                  ${change.toFixed(2)}
+                  ${changePreview.toFixed(2)}
                 </Typography>
               </Box>
             </Paper>
