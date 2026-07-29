@@ -180,7 +180,11 @@ export const POSView: React.FC = () => {
       const targetProduct = exactMatch || fuzzyMatch;
 
       if (targetProduct) {
-        if (targetProduct.tracksStock !== false && targetProduct.stock <= 0) {
+        const quantityInCart = cart
+          .filter((item) => item.product.id === targetProduct.id)
+          .reduce((total, item) => total + item.quantity, 0);
+
+        if (targetProduct.tracksStock !== false && quantityInCart + 1 > targetProduct.stock) {
           setOutOfStockProduct(targetProduct);
         } else if (targetProduct.saleType === 'WEIGHT') {
           setWeightModalProduct(targetProduct);
