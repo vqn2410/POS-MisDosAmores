@@ -56,7 +56,7 @@ export const App: React.FC = () => {
 };
 
 const AppContent: React.FC = () => {
-  const { activeTabId } = useWorkspaceStore();
+  const { activeTabId, isSidebarVisible, showSidebar } = useWorkspaceStore();
   const { isAuthenticated, isLoading, setUser, setLoading, setCashSession } = useAuthStore();
   const { addProductToCart, addVariableProductToCart } = usePOSStore();
   const { addNotification } = useNotificationStore();
@@ -70,6 +70,7 @@ const AppContent: React.FC = () => {
   const [isQuickSaleMode, setIsQuickSaleMode] = React.useState(false);
   const [isLoginOpen, setIsLoginOpen] = React.useState(false);
   const [missingProductCode, setMissingProductCode] = React.useState<string | null>(null);
+  const isPosFullscreen = activeTabId === 'pos' && !isSidebarVisible;
 
   const currentTheme = React.useMemo(() => {
     const baseTheme = themeMode === 'dark' ? darkTheme : lightTheme;
@@ -186,6 +187,12 @@ const AppContent: React.FC = () => {
   const handleScannerDetectedCode = (code: string) => {
     const trimmed = code.trim();
     if (!trimmed) return;
+
+    if (trimmed.toLowerCase() === 'mostrar') {
+      showSidebar();
+      setIsScannerOpen(false);
+      return;
+    }
 
     // 1. Check quick expression "2x2000"
     const quickResult = parseQuickVariableProduct(trimmed);
@@ -309,18 +316,18 @@ const AppContent: React.FC = () => {
 
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
         {/* Top App Header */}
-        <Header />
+        {!isPosFullscreen && <Header />}
 
         {/* Main Body Area */}
-        <Box sx={{ display: 'flex', flexGrow: 1, pt: '64px', pb: isMobile ? '64px' : '32px', overflow: 'hidden' }}>
+        <Box sx={{ display: 'flex', flexGrow: 1, pt: isPosFullscreen ? 0 : '64px', pb: isMobile ? '64px' : isPosFullscreen ? 0 : '32px', overflow: 'hidden' }}>
           {/* Permanent Collapsible Sidebar (Hidden on Mobile) */}
-          <Box sx={{ display: { xs: 'none', md: 'block' } }}>
+          <Box sx={{ display: { xs: 'none', md: isSidebarVisible ? 'block' : 'none' } }}>
             <Sidebar />
           </Box>
 
           {/* Dynamic Workspace Container */}
           <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', bgcolor: 'background.default' }}>
-            <Box sx={{ display: { xs: 'none', md: 'block' } }}>
+          <Box sx={{ display: { xs: 'none', md: isPosFullscreen ? 'none' : 'block' } }}>
               <OpenTicketsBar />
             </Box>
             <Box sx={{ flexGrow: 1, overflowY: 'auto' }}>
@@ -335,7 +342,7 @@ const AppContent: React.FC = () => {
         <MobileNavBar onOpenScanner={() => setIsScannerOpen(true)} />
 
         {/* Bottom Real-time Status Bar (Desktop) */}
-        <Box sx={{ display: { xs: 'none', md: 'block' } }}>
+        <Box sx={{ display: { xs: 'none', md: isPosFullscreen ? 'none' : 'block' } }}>
           <StatusFooter />
         </Box>
 

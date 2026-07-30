@@ -106,7 +106,10 @@ export const POSView: React.FC = () => {
   const [productSearchTerm, setProductSearchTerm] = React.useState('');
   const [selectedSearchProduct, setSelectedSearchProduct] = React.useState<Product | null>(null);
   const [isPriceChangeOpen, setIsPriceChangeOpen] = React.useState(false);
-  const [isProductCreateOpen, setIsProductCreateOpen] = React.useState(false);
+  const [isProductEditorOpen, setIsProductEditorOpen] = React.useState(false);
+  const [productEditorProduct, setProductEditorProduct] = React.useState<Product | null>(null);
+  const [isProductModifyOpen, setIsProductModifyOpen] = React.useState(false);
+  const [productModifyCode, setProductModifyCode] = React.useState('');
   const [cashMovementType, setCashMovementType] = React.useState<'INCOME' | 'WITHDRAWAL'>('INCOME');
   const [isCashMovementOpen, setIsCashMovementOpen] = React.useState(false);
   const [priceChangeCode, setPriceChangeCode] = React.useState('');
@@ -117,6 +120,7 @@ export const POSView: React.FC = () => {
   const ticketScrollRef = React.useRef<HTMLDivElement>(null);
   const priceCodeRef = React.useRef<HTMLInputElement>(null);
   const priceInputRef = React.useRef<HTMLInputElement>(null);
+  const productModifyCodeRef = React.useRef<HTMLInputElement>(null);
 
   const focusSearchInput = React.useCallback(() => {
     setTimeout(() => {
@@ -192,6 +196,51 @@ export const POSView: React.FC = () => {
         setProductSearchTerm('');
         setSelectedSearchProduct(null);
         setIsProductSearchOpen(true);
+        return;
+      }
+
+      if (trimmed.toLowerCase() === 'mostrar') {
+        useWorkspaceStore.getState().showSidebar();
+        setSearchTerm('');
+        return;
+      }
+
+      if (trimmed.toLowerCase() === 's') {
+        setIsStockEntryOpen(true);
+        setSearchTerm('');
+        return;
+      }
+
+      if (trimmed.toLowerCase() === 'i' || trimmed.toLowerCase() === 'r') {
+        openCashMovement(trimmed.toLowerCase() === 'i' ? 'INCOME' : 'WITHDRAWAL');
+        setSearchTerm('');
+        return;
+      }
+
+      if (trimmed.toLowerCase() === 'a') {
+        setProductEditorProduct(null);
+        setIsProductEditorOpen(true);
+        setSearchTerm('');
+        return;
+      }
+
+      if (trimmed.toLowerCase() === 'c') {
+        openPriceChange();
+        setSearchTerm('');
+        return;
+      }
+
+      if (trimmed.toLowerCase() === 'z') {
+        if (cart.length > 0) suspendSale();
+        setSearchTerm('');
+        return;
+      }
+
+      if (trimmed.toLowerCase() === 'm') {
+        setProductModifyCode('');
+        setIsProductModifyOpen(true);
+        setSearchTerm('');
+        setTimeout(() => productModifyCodeRef.current?.focus(), 50);
         return;
       }
 
@@ -331,6 +380,19 @@ export const POSView: React.FC = () => {
     focusSearchInput();
   };
 
+  const openProductEditorFromCode = () => {
+    const code = productModifyCode.trim();
+    const product = products.find((item) => item.barcode === code || item.sku.toLowerCase() === code.toLowerCase());
+    if (!product) {
+      addNotification({ title: 'Producto no encontrado', message: `No se encontró el código "${code}".`, type: 'warning' });
+      productModifyCodeRef.current?.select();
+      return;
+    }
+    setIsProductModifyOpen(false);
+    setProductEditorProduct(product);
+    setIsProductEditorOpen(true);
+  };
+
   // Financial Summary
   const { subtotal, taxTotal, discountTotal, grandTotal } = calculateCartTotals(cart, discountGlobal);
 
@@ -379,7 +441,7 @@ export const POSView: React.FC = () => {
       sx={{
         display: 'flex',
         flexDirection: 'column',
-        height: 'calc(100vh - 64px - 41px - 32px)',
+        height: '100%',
         gap: 0,
         p: 0,
         bgcolor: '#D9D9D9',
@@ -853,7 +915,7 @@ export const POSView: React.FC = () => {
           fullWidth
           size="large"
           variant="contained"
-          onClick={() => setIsProductCreateOpen(true)}
+          onClick={() => { setProductEditorProduct(null); setIsProductEditorOpen(true); }}
           startIcon={<PackagePlus size={20} />}
           sx={{ py: 1, borderRadius: 0.5, fontWeight: 800, fontSize: '1rem', minHeight: 42, bgcolor: '#EFF6FF', color: '#1D4ED8', border: '1px solid #2563EB', boxShadow: 'none', '&:hover': { bgcolor: '#DBEAFE' } }}
         >
@@ -868,6 +930,16 @@ export const POSView: React.FC = () => {
           sx={{ py: 1, borderRadius: 0.5, fontWeight: 800, fontSize: '1rem', minHeight: 42, bgcolor: '#FFF7ED', color: '#9A3412', border: '1px solid #C2410C', boxShadow: 'none', '&:hover': { bgcolor: '#FFEDD5' } }}
         >
           Cambiar precio
+        </Button>
+        <Button
+          fullWidth
+          size="large"
+          variant="outlined"
+          onClick={() => { setProductModifyCode(''); setIsProductModifyOpen(true); setTimeout(() => productModifyCodeRef.current?.focus(), 50); }}
+          startIcon={<Edit2 size={20} />}
+          sx={{ py: 1, borderRadius: 0.5, fontWeight: 800, fontSize: '1rem', minHeight: 42 }}
+        >
+          Modificar
         </Button>
         {/* 1. Cobrar (Solid Vibrant Blue) */}
         <Button
@@ -1011,7 +1083,18 @@ export const POSView: React.FC = () => {
       <ProductNotFoundAlert code={missingProductCode} onClose={() => setMissingProductCode(null)} />
       <POSStockEntryModal open={isStockEntryOpen} onClose={() => { setIsStockEntryOpen(false); setStockEntryProduct(null); }} products={products} initialProduct={stockEntryProduct} />
       <CashMovementModal open={isCashMovementOpen} type={cashMovementType} onClose={() => setIsCashMovementOpen(false)} onConfirm={createCashMovementFromPos} isPending={createCashMovement.isPending} />
-      <ProductDrawerEditor product={null} open={isProductCreateOpen} onClose={() => { setIsProductCreateOpen(false); focusSearchInput(); }} />
+      <ProductDrawerEditor product={productEditorProduct} open={isProductEditorOpen} onClose={() => { setIsProductEditorOpen(false); setProductEditorProduct(null); focusSearchInput(); }} />
+
+      <Dialog open={isProductModifyOpen} onClose={() => setIsProductModifyOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontWeight: 900 }}>Modificar producto</DialogTitle>
+        <DialogContent>
+          <TextField inputRef={productModifyCodeRef} autoFocus fullWidth label="Código de barras o SKU" value={productModifyCode} onChange={(event) => setProductModifyCode(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); openProductEditorFromCode(); } }} />
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setIsProductModifyOpen(false)}>Cancelar</Button>
+          <Button variant="contained" onClick={openProductEditorFromCode}>Modificar</Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={isPriceChangeOpen} onClose={() => setIsPriceChangeOpen(false)} maxWidth="xs" fullWidth>
         <DialogTitle sx={{ fontWeight: 900 }}>Cambiar precio</DialogTitle>

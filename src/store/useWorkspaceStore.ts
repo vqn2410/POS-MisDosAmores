@@ -12,11 +12,15 @@ interface WorkspaceState {
   openTab: (tab: WorkspaceTab) => void;
   closeTab: (tabId: string) => void;
   setActiveTab: (tabId: string) => void;
+  isSidebarVisible: boolean;
+  showSidebar: () => void;
+  hideSidebar: () => void;
 }
 
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   tabs: INITIAL_TABS,
   activeTabId: 'pos',
+  isSidebarVisible: false,
   openTab: (newTab) => {
     const existing = get().tabs.find((t) => t.id === newTab.id);
     if (existing) {
@@ -42,4 +46,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     set({ tabs: newTabs, activeTabId: nextActiveId });
   },
   setActiveTab: (tabId) => set({ activeTabId: tabId }),
+  showSidebar: () => set({ isSidebarVisible: true }),
+  hideSidebar: () => set({ isSidebarVisible: false }),
 }));
