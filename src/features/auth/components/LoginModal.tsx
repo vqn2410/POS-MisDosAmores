@@ -4,18 +4,20 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-  TextField,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
   Button,
   Box,
   Typography,
   Alert,
   CircularProgress,
-  InputAdornment,
-  IconButton,
 } from '@mui/material';
-import { Lock, User as UserIcon, Eye, EyeOff, ShieldCheck } from 'lucide-react';
+import { User as UserIcon, ShieldCheck } from 'lucide-react';
 import { loginWithUsername } from '../services/firebaseAuthService';
 import { useAuthStore } from '../../../store/useAuthStore';
+import { useUsers } from '../../../hooks/useUsers';
 
 interface LoginModalProps {
   open: boolean;
@@ -24,17 +26,17 @@ interface LoginModalProps {
 
 export const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
   const [username, setUsername] = React.useState('');
-  const [password, setPassword] = React.useState('');
-  const [showPassword, setShowPassword] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
 
   const { setUser } = useAuthStore();
+  const { data: users = [] } = useUsers();
+  const activeUsers = users.filter((user) => user.isActive);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!username.trim() || !password) {
-      setErrorMessage('Por favor ingrese su usuario y contraseña.');
+    if (!username.trim()) {
+      setErrorMessage('Seleccioná un usuario para ingresar.');
       return;
     }
 
@@ -42,8 +44,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
     setErrorMessage(null);
 
     try {
-      // 1. Query Firestore for username -> 2. Check active -> 3. Firebase Auth via email
-      const authenticatedUser = await loginWithUsername(username, password);
+      const authenticatedUser = await loginWithUsername(username);
       setUser(authenticatedUser);
       setLoading(false);
       onClose();
@@ -73,10 +74,10 @@ export const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
           <ShieldCheck size={28} />
         </Box>
         <Typography variant="h5" sx={{ fontWeight: 800 }}>
-          Autenticación Firebase
+          Ingreso al POS
         </Typography>
         <Typography variant="caption" color="text.secondary">
-          Inicia sesión con tu Nombre de Usuario
+          Seleccioná tu usuario para comenzar
         </Typography>
       </DialogTitle>
 
@@ -88,58 +89,35 @@ export const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
         )}
 
         <Box component="form" onSubmit={handleLogin} sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
-          <TextField
-            autoFocus
-            fullWidth
-            label="Usuario"
-            placeholder="ej: admin, cajero1"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            disabled={loading}
-            slotProps={{
-              input: {
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <UserIcon size={18} />
-                  </InputAdornment>
-                ),
-                sx: { borderRadius: 2.5 },
-              },
-            }}
-          />
+          <FormControl fullWidth autoFocus>
+            <InputLabel id="pos-user-label">Usuario</InputLabel>
+            <Select
+              labelId="pos-user-label"
+              label="Usuario"
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              disabled={loading}
+              startAdornment={<UserIcon size={18} style={{ marginLeft: 12, marginRight: 8 }} />}
+              sx={{ borderRadius: 2.5 }}
+            >
+              {activeUsers.map((user) => (
+                <MenuItem key={user.id} value={user.username}>
+                  {user.fullName || user.username} ({user.username})
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
 
-          <TextField
-            fullWidth
-            label="Contraseña"
-            type={showPassword ? 'text' : 'password'}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            disabled={loading}
-            slotProps={{
-              input: {
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <Lock size={18} />
-                  </InputAdornment>
-                ),
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <IconButton size="small" onClick={() => setShowPassword(!showPassword)}>
-                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                    </IconButton>
-                  </InputAdornment>
-                ),
-                sx: { borderRadius: 2.5 },
-              },
-            }}
-          />
+          {activeUsers.length === 0 && (
+            <Alert severity="warning">No hay usuarios activos disponibles.</Alert>
+          )}
 
           <Button
             type="submit"
             variant="contained"
             color="primary"
             size="large"
-            disabled={loading}
+            disabled={loading || !username}
             sx={{ py: 1.5, mt: 1, borderRadius: 3, fontWeight: 800, fontSize: '1rem' }}
           >
             {loading ? <CircularProgress size={24} color="inherit" /> : 'INICIAR SESIÓN'}

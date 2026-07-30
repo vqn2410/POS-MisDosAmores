@@ -1,5 +1,4 @@
 import {
-  signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut as firebaseSignOut,
   onAuthStateChanged,
@@ -69,76 +68,28 @@ export async function createFirebaseUser(
 }
 
 /**
- * Authenticates a user using Username and Password.
- * 1. Finds user document in Firestore "users" collection by username.
- * 2. If not found, tries Firebase Auth directly (the username may be an email,
- *    or the account exists in Auth but not in Firestore yet).
- * 3. On first login for an Auth-only user, creates the Firestore doc automatically.
+ * Opens a POS workstation session using an existing active user.
  */
-export async function loginWithUsername(username: string, password: string): Promise<User> {
-  // Try Firestore lookup first
+export async function loginWithUsername(username: string): Promise<User> {
   const userDoc = await getUserDocByUsername(username);
 
-  if (userDoc) {
-    // Existing document — normal flow
-    if (!userDoc.isActive) {
-      throw new Error('El usuario se encuentra inactivo. Acceso denegado.');
-    }
-    const email = userDoc.email || emailFromUsername(username);
-    const userCredential = await signInWithEmailAndPassword(auth, email, password);
-    const firebaseUser = userCredential.user;
-
-    try {
-      const userRef = doc(db, 'users', userDoc.id);
-      await updateDoc(userRef, {
-        lastLogin: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-    } catch (err) {
-      console.warn('No se pudo actualizar lastLogin en Firestore:', err);
-    }
-
-    return { ...userDoc, id: firebaseUser.uid };
+  if (!userDoc) {
+    throw new Error('Usuario no encontrado.');
+  }
+  if (!userDoc.isActive) {
+    throw new Error('El usuario se encuentra inactivo. Acceso denegado.');
   }
 
-  // No Firestore doc — try multiple auth strategies
-  const strategies = [
-    { label: `${username}@pos.local`, email: emailFromUsername(username) },
-  ];
-  if (username.includes('@')) {
-    strategies.push({ label: username, email: username });
+  try {
+    await updateDoc(doc(db, 'users', userDoc.id), {
+      lastLogin: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  } catch (err) {
+    console.warn('No se pudo actualizar lastLogin en Firestore:', err);
   }
 
-  for (const s of strategies) {
-    try {
-      const userCredential = await signInWithEmailAndPassword(auth, s.email, password);
-      const fbUser = userCredential.user;
-      const derivedUsername = username.includes('@') ? username.split('@')[0] : username;
-
-      const newUser: User = {
-        id: fbUser.uid,
-        username: derivedUsername,
-        email: s.email,
-        fullName: fbUser.displayName || derivedUsername,
-        role: 'ADMIN',
-        branchId: 'br-01',
-        is2FAEnabled: false,
-        isActive: true,
-      };
-
-      await setDoc(firestoreDoc(db, 'users', fbUser.uid), stripUndefined({
-        ...newUser,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      }));
-
-      return newUser;
-    } catch {
-      continue;
-    }
-  }
-
-  throw new Error('Credenciales inválidas. Por favor verifique el usuario y la contraseña.');
+  return userDoc;
 }
 
 /**
