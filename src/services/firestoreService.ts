@@ -6,6 +6,7 @@ import {
   addDoc,
   updateDoc,
   deleteDoc,
+  writeBatch,
   query,
   orderBy,
   where,
@@ -82,6 +83,14 @@ export async function update<T>(collectionName: string, id: string, data: Partia
 
 export async function remove(collectionName: string, id: string): Promise<void> {
   await deleteDoc(doc(db, collectionName, id));
+}
+
+export async function updateMany<T>(collectionName: string, updates: Array<{ id: string; data: Partial<T> }>): Promise<void> {
+  const batch = writeBatch(db);
+  updates.forEach(({ id, data }) => {
+    batch.update(doc(db, collectionName, id), stripUndefined({ ...data, updatedAt: serverTimestamp() }) as any);
+  });
+  await batch.commit();
 }
 
 export { serverTimestamp };

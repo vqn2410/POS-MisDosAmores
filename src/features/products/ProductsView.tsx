@@ -21,7 +21,7 @@ import {
   DialogTitle,
   TablePagination,
 } from '@mui/material';
-import { Plus, Search, Edit2, Trash2, Filter, Upload, PackagePlus, Tags } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Filter, Upload, PackagePlus, Tags, Scale } from 'lucide-react';
 import { ProductImage } from '../../components/common/ProductImage';
 import type { Product } from '../../types';
 import { useProducts, useDeleteProduct } from '../../hooks/useProducts';
@@ -30,9 +30,15 @@ import { BulkProductImportDialog } from './components/BulkProductImportDialog';
 import { useCategories, useCreateCategory } from '../../hooks/useCategories';
 import { StockEntryDialog } from './components/StockEntryDialog';
 import { useNotificationStore } from '../../store/useNotificationStore';
+import * as fs from '../../services/firestoreService';
+
+const FIAMBRE_CODES = new Set([
+  '700', '701', '702', '703', '704', '705', '706', '707', '708', '709', '710', '711', '712', '713', '714',
+  '715', '716', '717', '718', '719', '720', '721', '722', '723', '724', '730', '731', '732', '733', '734',
+]);
 
 export const ProductsView: React.FC = () => {
-  const { data: products = [], isLoading } = useProducts();
+  const { data: products = [], isLoading, refetch: refetchProducts } = useProducts();
   const deleteProduct = useDeleteProduct();
   const { data: categories = [] } = useCategories();
   const createCategory = useCreateCategory();
@@ -47,6 +53,7 @@ export const ProductsView: React.FC = () => {
   const [isCategoryDialogOpen, setIsCategoryDialogOpen] = React.useState(false);
   const [categoryName, setCategoryName] = React.useState('');
   const [categoryDescription, setCategoryDescription] = React.useState('');
+  const [isConfiguringFiambres, setIsConfiguringFiambres] = React.useState(false);
 
   const filteredProducts = products.filter(
       (p) =>
@@ -88,6 +95,34 @@ export const ProductsView: React.FC = () => {
     }
   };
 
+  const handleConfigureFiambres = async () => {
+    setIsConfiguringFiambres(true);
+    try {
+      let fiambreCategory = categories.find((category) => category.name.toLowerCase() === 'fiambre');
+      if (!fiambreCategory) {
+        const id = await createCategory.mutateAsync({ name: 'Fiambre', description: 'Fiambres y quesos vendidos a granel' });
+        fiambreCategory = { id, name: 'Fiambre' };
+      }
+
+      const matches = products.filter((product) => FIAMBRE_CODES.has(product.sku) || FIAMBRE_CODES.has(product.barcode));
+      if (matches.length === 0) {
+        addNotification({ title: 'No se encontraron productos', message: 'No hay productos cargados con los códigos de fiambre indicados.', type: 'warning' });
+        return;
+      }
+
+      await fs.updateMany<Product>('products', matches.map((product) => ({
+        id: product.id,
+        data: { categoryId: fiambreCategory.id, categoryName: 'Fiambre', saleType: 'WEIGHT', unit: 'kg' },
+      })));
+      await refetchProducts();
+      addNotification({ title: 'Fiambres actualizados', message: `${matches.length} productos conservan su precio actual por kilo.`, type: 'success' });
+    } catch {
+      addNotification({ title: 'Error', message: 'No se pudieron actualizar los productos de fiambre.', type: 'error' });
+    } finally {
+      setIsConfiguringFiambres(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <Box sx={{ p: 3, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
@@ -111,6 +146,9 @@ export const ProductsView: React.FC = () => {
         <Box sx={{ display: 'flex', gap: 1.5 }}>
           <Button variant="outlined" startIcon={<Tags size={20} />} onClick={() => setIsCategoryDialogOpen(true)} sx={{ borderRadius: 3, fontWeight: 800, minHeight: 48, px: 2.5 }}>
             Categorías
+          </Button>
+          <Button variant="outlined" color="secondary" startIcon={<Scale size={20} />} onClick={() => void handleConfigureFiambres()} disabled={isConfiguringFiambres} sx={{ borderRadius: 3, fontWeight: 800, minHeight: 48, px: 2.5 }}>
+            {isConfiguringFiambres ? 'Actualizando...' : 'Configurar fiambres'}
           </Button>
           <Button variant="contained" color="success" startIcon={<PackagePlus size={20} />} onClick={() => { setStockProduct(null); setIsStockDialogOpen(true); }} sx={{ borderRadius: 3, fontWeight: 800, minHeight: 48, px: 2.5 }}>
             Agregar stock
