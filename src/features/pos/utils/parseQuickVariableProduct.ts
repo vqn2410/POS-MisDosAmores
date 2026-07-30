@@ -1,6 +1,6 @@
 /**
  * Utility for parsing fast variable product expressions in the POS search input.
- * Format: CANTIDAD x PRECIO (e.g. 2x2000, 2X2000, 2 x 2000, 2.5x2000, 2,5x2000, 3x1500.50, 3x1500,50)
+ * Format: CANTIDAD * PRECIO (e.g. 2*2000, 2 * 2000, 2.5*2000, 2,5*2000, 3*1500.50, 3*1500,50)
  */
 
 export interface QuickVariableProductResult {
@@ -27,10 +27,10 @@ export function parseQuickVariableProduct(input: string): QuickVariableProductRe
     return invalidResult;
   }
 
-  // Regex pattern matching exact string: positive number, multiplier x/X, positive number
+  // Regex pattern matching exact string: positive number, multiplier *, positive number
   // Accepts integer or decimal (with dot '.' or comma ',' as decimal separator)
   // Rejects leading minus signs, invalid characters, extra words, multiple multipliers
-  const regex = /^\s*(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)\s*$/;
+  const regex = /^\s*(\d+(?:[.,]\d+)?)\s*\*\s*(\d+(?:[.,]\d+)?)\s*$/;
   const match = trimmed.match(regex);
 
   if (!match) {

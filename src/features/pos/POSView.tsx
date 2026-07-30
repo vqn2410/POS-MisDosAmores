@@ -163,7 +163,7 @@ export const POSView: React.FC = () => {
         return;
       }
 
-      // 1. PRIORITY 1: Detect fast expression "CANTIDAD x PRECIO" (e.g. 2x2000, 2X2000, 2 x 2000, 2,5x2000)
+      // 1. PRIORITY 1: Detect fast expression "CANTIDAD * PRECIO" (e.g. 2*2000, 2 * 2000, 2,5*2000)
       const quickResult = parseQuickVariableProduct(trimmed);
       if (quickResult.isValid) {
         addVariableProductToCart(quickResult.quantity, quickResult.unitPrice);

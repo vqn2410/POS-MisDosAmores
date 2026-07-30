@@ -83,7 +83,7 @@ export const MobilePOSView: React.FC<MobilePOSViewProps> = ({ onOpenScanner }) =
     const trimmed = searchTerm.trim();
     if (!trimmed) return;
 
-    // 1. Check quick expression "2x2000"
+    // 1. Check quick expression "2*2000"
     const quickResult = parseQuickVariableProduct(trimmed);
     if (quickResult.isValid) {
       addVariableProductToCart(quickResult.quantity, quickResult.unitPrice);
