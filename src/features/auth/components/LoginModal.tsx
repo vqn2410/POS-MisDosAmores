@@ -31,7 +31,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
 
   const { setUser } = useAuthStore();
   const { data: users = [] } = useUsers();
-  const activeUsers = users.filter((user) => user.isActive);
+  const activeUsers = users.filter((user) => user.isActive !== false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();

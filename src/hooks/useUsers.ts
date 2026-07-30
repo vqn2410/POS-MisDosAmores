@@ -7,7 +7,7 @@ const COL = 'users';
 export function useUsers() {
   return useQuery({
     queryKey: ['users'],
-    queryFn: () => fs.getAllOrdered<User>(COL, 'createdAt'),
+    queryFn: () => fs.getAll<User>(COL),
   });
 }
 

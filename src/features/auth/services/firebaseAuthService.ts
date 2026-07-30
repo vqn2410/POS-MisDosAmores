@@ -76,7 +76,7 @@ export async function loginWithUsername(username: string): Promise<User> {
   if (!userDoc) {
     throw new Error('Usuario no encontrado.');
   }
-  if (!userDoc.isActive) {
+  if (userDoc.isActive === false) {
     throw new Error('El usuario se encuentra inactivo. Acceso denegado.');
   }
 
