@@ -12,6 +12,22 @@ const defaultCustomer: Customer = {
   totalPurchases: 0,
 };
 
+function playProductAddedSound() {
+  if (typeof AudioContext === 'undefined') return;
+  try {
+    const audio = new AudioContext();
+    const oscillator = audio.createOscillator();
+    const gain = audio.createGain();
+    oscillator.frequency.value = 950;
+    gain.gain.value = 0.06;
+    oscillator.connect(gain);
+    gain.connect(audio.destination);
+    oscillator.start();
+    oscillator.stop(audio.currentTime + 0.08);
+    oscillator.addEventListener('ended', () => void audio.close());
+  } catch {}
+}
+
 export interface SuspendedSale {
   id: string;
   items: CartItem[];
@@ -141,6 +157,7 @@ export const usePOSStore = create<POSState>((set, get) => ({
         return { cart: newCart, selectedItemIndex: newCart.length - 1 };
       }
     });
+    playProductAddedSound();
   },
 
   addWeightProductToCart: (product, weightKg) => {
@@ -165,6 +182,7 @@ export const usePOSStore = create<POSState>((set, get) => ({
       const newCart = [...state.cart, newItem];
       return { cart: newCart, selectedItemIndex: newCart.length - 1 };
     });
+    playProductAddedSound();
   },
 
   addVariableProductToCart: (quantity, unitPrice) => {
@@ -206,6 +224,7 @@ export const usePOSStore = create<POSState>((set, get) => ({
       const newCart = [...state.cart, newItem];
       return { cart: newCart, selectedItemIndex: newCart.length - 1 };
     });
+    playProductAddedSound();
   },
 
   updateItemQuantity: (productId, quantity) => {
