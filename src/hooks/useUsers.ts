@@ -3,11 +3,28 @@ import * as fs from '../services/firestoreService';
 import type { User } from '../types';
 
 const COL = 'users';
+const USER_LIST_CACHE_KEY = 'pos-user-list-cache';
+
+function readCachedUsers(): User[] | undefined {
+  try {
+    const cached = localStorage.getItem(USER_LIST_CACHE_KEY);
+    return cached ? JSON.parse(cached) as User[] : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 export function useUsers() {
   return useQuery({
     queryKey: ['users'],
-    queryFn: () => fs.getAll<User>(COL),
+    queryFn: async () => {
+      const users = await fs.getAll<User>(COL);
+      try { localStorage.setItem(USER_LIST_CACHE_KEY, JSON.stringify(users)); } catch {}
+      return users;
+    },
+    initialData: readCachedUsers,
+    initialDataUpdatedAt: 0,
+    staleTime: 0,
   });
 }
 
