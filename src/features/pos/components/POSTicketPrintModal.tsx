@@ -73,6 +73,7 @@ export const POSTicketPrintModal: React.FC<POSTicketPrintModalProps> = ({ sale, 
         {/* Thermal Ticket Replica Box */}
         <Box
           id="printable-ticket"
+          className="thermal-ticket"
           sx={{
             width: '48mm',
             boxSizing: 'border-box',
@@ -86,39 +87,39 @@ export const POSTicketPrintModal: React.FC<POSTicketPrintModalProps> = ({ sale, 
             boxShadow: '0 4px 10px rgba(0,0,0,0.05)',
           }}
         >
-          <Typography variant="subtitle2" align="center" sx={{ fontWeight: 900, textTransform: 'uppercase' }}>
+          <Typography className="ticket-company" variant="subtitle2" align="center" sx={{ fontWeight: 900, textTransform: 'uppercase' }}>
             {company?.name || 'Nexus POS'}
           </Typography>
-          <Typography variant="caption" align="center" sx={{ display: 'block' }}>
+          <Typography className="ticket-address" variant="caption" align="center" sx={{ display: 'block' }}>
             {company?.address || ''}
           </Typography>
-          <Typography variant="caption" align="center" sx={{ display: 'block', mb: 1 }}>
+          <Typography className="ticket-contact" variant="caption" align="center" sx={{ display: 'block', mb: 1 }}>
             CUIT: {company?.taxId || ''} | Tel: {company?.phone || ''}
           </Typography>
-          <Divider sx={{ borderStyle: 'dashed', my: 1 }} />
+          <Divider className="ticket-divider" sx={{ borderStyle: 'dashed', my: 1 }} />
 
-          <Typography variant="caption" sx={{ display: 'block' }}>
+          <Typography className="ticket-detail" variant="caption" sx={{ display: 'block' }}>
             Ticket: {sale.ticketNumber}
           </Typography>
-          <Typography variant="caption" sx={{ display: 'block' }}>
+          <Typography className="ticket-detail" variant="caption" sx={{ display: 'block' }}>
             Fecha: {new Date(sale.createdAt).toLocaleString()}
           </Typography>
-          <Typography variant="caption" sx={{ display: 'block' }}>
+          <Typography className="ticket-detail" variant="caption" sx={{ display: 'block' }}>
             Atendió: {sale.userName}
           </Typography>
-          <Typography variant="caption" sx={{ display: 'block', mb: 1 }}>
+          <Typography className="ticket-detail" variant="caption" sx={{ display: 'block', mb: 1 }}>
             Cliente: {sale.customerName}
           </Typography>
-          <Divider sx={{ borderStyle: 'dashed', my: 1 }} />
+          <Divider className="ticket-divider" sx={{ borderStyle: 'dashed', my: 1 }} />
 
           <Box sx={{ mb: 1 }}>
             {sale.items.map((item) => (
-              <Box key={item.product.id} sx={{ my: 0.75 }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700 }}>
-                  <span>{item.product.name}</span>
-                  <span>${item.total.toFixed(2)}</span>
+              <Box className="ticket-item" key={item.product.id} sx={{ my: 0.75 }}>
+                <Box className="ticket-item-head" sx={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700 }}>
+                  <span className="ticket-item-name">{item.product.name}</span>
+                  <span className="ticket-item-price">${item.total.toFixed(2)}</span>
                 </Box>
-                <Typography variant="caption" sx={{ display: 'block', color: '#475569' }}>
+                <Typography className="ticket-item-unit" variant="caption" sx={{ display: 'block', color: '#475569' }}>
                   {item.saleType === 'WEIGHT' && item.weightKg
                     ? `${item.weightKg.toFixed(3)} Kg × $${item.unitPrice.toLocaleString()}/Kg`
                     : item.isVariableProduct
@@ -128,21 +129,21 @@ export const POSTicketPrintModal: React.FC<POSTicketPrintModalProps> = ({ sale, 
               </Box>
             ))}
           </Box>
-          <Divider sx={{ borderStyle: 'dashed', my: 1 }} />
+          <Divider className="ticket-divider" sx={{ borderStyle: 'dashed', my: 1 }} />
 
-          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+          <Box className="ticket-total-row" sx={{ display: 'flex', justifyContent: 'space-between' }}>
             <span>Subtotal:</span>
             <span>${sale.subtotal.toFixed(2)}</span>
           </Box>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+          <Box className="ticket-total-row" sx={{ display: 'flex', justifyContent: 'space-between' }}>
             <span>Impuestos:</span>
             <span>${sale.taxTotal.toFixed(2)}</span>
           </Box>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', fontWeight: 900, fontSize: '1.1rem', mt: 1 }}>
+          <Box className="ticket-grand-total" sx={{ display: 'flex', justifyContent: 'space-between', fontWeight: 900, fontSize: '1.1rem', mt: 1 }}>
             <span>TOTAL:</span>
             <span>${sale.grandTotal.toFixed(2)}</span>
           </Box>
-          <Divider sx={{ borderStyle: 'dashed', my: 1 }} />
+          <Divider className="ticket-divider" sx={{ borderStyle: 'dashed', my: 1 }} />
 
           {isFiscal && qrData && (
             <Box sx={{ textAlign: 'center', my: 1.5 }}>
@@ -154,12 +155,12 @@ export const POSTicketPrintModal: React.FC<POSTicketPrintModalProps> = ({ sale, 
           )}
 
           {sale.notes && (
-            <Typography variant="caption" align="center" sx={{ display: 'block', fontStyle: 'italic', my: 0.5 }}>
+            <Typography className="ticket-note" variant="caption" align="center" sx={{ display: 'block', fontStyle: 'italic', my: 0.5 }}>
               {sale.notes}
             </Typography>
           )}
 
-          <Typography variant="caption" align="center" sx={{ display: 'block', mt: 1, fontWeight: 700 }}>
+          <Typography className="ticket-footer" variant="caption" align="center" sx={{ display: 'block', mt: 1, fontWeight: 700 }}>
             Gracias por su compra
           </Typography>
         </Box>
