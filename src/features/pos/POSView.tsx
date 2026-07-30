@@ -888,7 +888,7 @@ export const POSView: React.FC = () => {
         </Box>
       </Paper>
 
-      <Box sx={{ display: 'flex', gap: 0.75, p: 0.75, bgcolor: '#ECECEC', borderTop: '1px solid #FFFFFF' }}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 0.75, p: 0.75, bgcolor: '#ECECEC', borderTop: '1px solid #FFFFFF' }}>
         <Button fullWidth size="large" variant="contained" onClick={() => lastInvoice && setLastCompletedSale(lastInvoice)} disabled={!lastInvoice} startIcon={<Printer size={20} />} sx={{ py: 1, borderRadius: 0.5, fontWeight: 800, fontSize: '1rem', minHeight: 42 }}>
           Última factura
         </Button>
