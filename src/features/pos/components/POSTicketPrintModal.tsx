@@ -4,6 +4,8 @@ import { Printer, CheckCircle } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import type { Sale } from '../../../types';
 import { useCompany } from '../../../hooks/useCompany';
+import { useNotificationStore } from '../../../store/useNotificationStore';
+import { printSaleWithQzTray } from '../../../services/qzTrayPrintService';
 
 interface POSTicketPrintModalProps {
   sale: Sale | null;
@@ -30,6 +32,8 @@ function getFiscalQrData(sale: Sale, company: { name?: string; taxId?: string } 
 
 export const POSTicketPrintModal: React.FC<POSTicketPrintModalProps> = ({ sale, onClose }) => {
   const { data: company } = useCompany();
+  const { addNotification } = useNotificationStore();
+  const [isQzPrinting, setIsQzPrinting] = React.useState(false);
 
   if (!sale) return null;
 
@@ -38,6 +42,22 @@ export const POSTicketPrintModal: React.FC<POSTicketPrintModalProps> = ({ sale, 
 
   const handlePrint = () => {
     window.print();
+  };
+
+  const handleQzPrint = async () => {
+    setIsQzPrinting(true);
+    try {
+      await printSaleWithQzTray(sale, company);
+      addNotification({ title: 'Ticket enviado a impresora', message: 'Impresión directa realizada con QZ Tray.', type: 'success' });
+    } catch (error) {
+      addNotification({
+        title: 'No se pudo imprimir con QZ Tray',
+        message: error instanceof Error ? error.message : 'Verificá que QZ Tray esté instalado, abierto y autorizado.',
+        type: 'error',
+      });
+    } finally {
+      setIsQzPrinting(false);
+    }
   };
 
   return (
@@ -169,6 +189,15 @@ export const POSTicketPrintModal: React.FC<POSTicketPrintModalProps> = ({ sale, 
       <DialogActions sx={{ p: 2, justifyContent: 'space-between' }}>
         <Button onClick={onClose} variant="outlined" sx={{ borderRadius: 3, minHeight: 48, fontWeight: 700 }}>
           Cerrar
+        </Button>
+        <Button
+          onClick={handleQzPrint}
+          variant="contained"
+          color="success"
+          disabled={isQzPrinting}
+          sx={{ borderRadius: 3, minHeight: 48, px: 2, fontWeight: 800 }}
+        >
+          {isQzPrinting ? 'Imprimiendo...' : 'Imprimir directo (QZ Tray)'}
         </Button>
         <Button
           onClick={handlePrint}
