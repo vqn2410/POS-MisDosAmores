@@ -112,10 +112,10 @@ export const ProductsView: React.FC = () => {
 
       await fs.updateMany<Product>('products', matches.map((product) => ({
         id: product.id,
-        data: { categoryId: fiambreCategory.id, categoryName: 'Fiambre', saleType: 'WEIGHT', unit: 'kg' },
+        data: { categoryId: fiambreCategory.id, categoryName: 'Fiambre', saleType: 'WEIGHT', unit: 'kg', tracksStock: false },
       })));
       await refetchProducts();
-      addNotification({ title: 'Fiambres actualizados', message: `${matches.length} productos conservan su precio actual por kilo.`, type: 'success' });
+      addNotification({ title: 'Fiambres actualizados', message: `${matches.length} productos conservan su precio por kilo y no controlan stock.`, type: 'success' });
     } catch {
       addNotification({ title: 'Error', message: 'No se pudieron actualizar los productos de fiambre.', type: 'error' });
     } finally {
