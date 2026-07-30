@@ -32,10 +32,11 @@ import {
   MoreVertical,
   Store as StoreIcon,
   PackagePlus,
+  Edit2,
 } from 'lucide-react';
 import { usePOSStore } from './store/usePOSStore';
 import { useNotificationStore } from '../../store/useNotificationStore';
-import { useProducts } from '../../hooks/useProducts';
+import { useProducts, useUpdateProduct } from '../../hooks/useProducts';
 import { useCustomers } from '../../hooks/useCustomers';
 import { useAuthStore } from '../../store/useAuthStore';
 import type { Product, Sale } from '../../types';
@@ -72,6 +73,7 @@ export const POSView: React.FC = () => {
   } = usePOSStore();
   const { addNotification } = useNotificationStore();
   const { data: products = [] } = useProducts();
+  const updateProduct = useUpdateProduct();
   const { data: customers = [] } = useCustomers();
   const { user } = useAuthStore();
 
@@ -90,9 +92,15 @@ export const POSView: React.FC = () => {
   const [isProductSearchOpen, setIsProductSearchOpen] = React.useState(false);
   const [productSearchTerm, setProductSearchTerm] = React.useState('');
   const [selectedSearchProduct, setSelectedSearchProduct] = React.useState<Product | null>(null);
+  const [isPriceChangeOpen, setIsPriceChangeOpen] = React.useState(false);
+  const [priceChangeCode, setPriceChangeCode] = React.useState('');
+  const [priceChangeProduct, setPriceChangeProduct] = React.useState<Product | null>(null);
+  const [newPrice, setNewPrice] = React.useState('');
 
   const searchInputRef = React.useRef<HTMLInputElement>(null);
   const ticketScrollRef = React.useRef<HTMLDivElement>(null);
+  const priceCodeRef = React.useRef<HTMLInputElement>(null);
+  const priceInputRef = React.useRef<HTMLInputElement>(null);
 
   const focusSearchInput = React.useCallback(() => {
     setTimeout(() => {
@@ -263,6 +271,39 @@ export const POSView: React.FC = () => {
   const handleConfirmVariable = (quantity: number, unitPrice: number) => {
     addVariableProductToCart(quantity, unitPrice);
     setIsVariableModalOpen(false);
+    focusSearchInput();
+  };
+
+  const openPriceChange = () => {
+    setPriceChangeCode('');
+    setPriceChangeProduct(null);
+    setNewPrice('');
+    setIsPriceChangeOpen(true);
+    setTimeout(() => priceCodeRef.current?.focus(), 50);
+  };
+
+  const findPriceChangeProduct = () => {
+    const code = priceChangeCode.trim();
+    if (!code) return;
+    const product = products.find((item) => item.barcode === code || item.sku.toLowerCase() === code.toLowerCase());
+    if (!product) {
+      addNotification({ title: 'Producto no encontrado', message: `No se encontró el código "${code}".`, type: 'warning' });
+      priceCodeRef.current?.select();
+      return;
+    }
+    setPriceChangeProduct(product);
+    setNewPrice(String(product.salePrice));
+    setTimeout(() => {
+      priceInputRef.current?.focus();
+      priceInputRef.current?.select();
+    }, 50);
+  };
+
+  const savePriceChange = async () => {
+    const price = Number(newPrice.replace(',', '.'));
+    if (!priceChangeProduct || !Number.isFinite(price) || price < 0) return;
+    await updateProduct.mutateAsync({ id: priceChangeProduct.id, data: { salePrice: price } });
+    setIsPriceChangeOpen(false);
     focusSearchInput();
   };
 
@@ -749,6 +790,16 @@ export const POSView: React.FC = () => {
         >
           Agregar stock
         </Button>
+        <Button
+          fullWidth
+          size="large"
+          variant="contained"
+          onClick={openPriceChange}
+          startIcon={<Edit2 size={20} />}
+          sx={{ py: 1, borderRadius: 0.5, fontWeight: 800, fontSize: '1rem', minHeight: 42, bgcolor: '#FFF7ED', color: '#9A3412', border: '1px solid #C2410C', boxShadow: 'none', '&:hover': { bgcolor: '#FFEDD5' } }}
+        >
+          Cambiar precio
+        </Button>
         {/* 1. Cobrar (Solid Vibrant Blue) */}
         <Button
           fullWidth
@@ -890,6 +941,47 @@ export const POSView: React.FC = () => {
       <POSTicketPrintModal sale={lastCompletedSale} onClose={() => setLastCompletedSale(null)} />
       <ProductNotFoundAlert code={missingProductCode} onClose={() => setMissingProductCode(null)} />
       <POSStockEntryModal open={isStockEntryOpen} onClose={() => { setIsStockEntryOpen(false); setStockEntryProduct(null); }} products={products} initialProduct={stockEntryProduct} />
+
+      <Dialog open={isPriceChangeOpen} onClose={() => setIsPriceChangeOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontWeight: 900 }}>Cambiar precio</DialogTitle>
+        <DialogContent>
+          <TextField
+            inputRef={priceCodeRef}
+            autoFocus
+            fullWidth
+            label="Código de barras o SKU"
+            value={priceChangeCode}
+            onChange={(event) => setPriceChangeCode(event.target.value)}
+            onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); findPriceChangeProduct(); } }}
+            sx={{ mb: 2 }}
+          />
+          {priceChangeProduct && (
+            <Box sx={{ p: 2, bgcolor: '#FFF7ED', border: '1px solid #FDBA74', borderRadius: 2 }}>
+              <Typography sx={{ fontWeight: 900 }}>{priceChangeProduct.name}</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                Precio actual: ${priceChangeProduct.salePrice.toLocaleString('es-AR', { minimumFractionDigits: 2 })}{priceChangeProduct.saleType === 'WEIGHT' ? ' / kg' : ''}
+              </Typography>
+              <TextField
+                inputRef={priceInputRef}
+                autoFocus
+                fullWidth
+                type="number"
+                label={priceChangeProduct.saleType === 'WEIGHT' ? 'Nuevo precio por kg' : 'Nuevo precio'}
+                value={newPrice}
+                onChange={(event) => setNewPrice(event.target.value)}
+                onKeyDown={(event) => { if (event.key === 'Enter') void savePriceChange(); }}
+                slotProps={{ htmlInput: { min: 0, step: 0.01 } }}
+              />
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setIsPriceChangeOpen(false)}>Cancelar</Button>
+          <Button variant="contained" onClick={() => void savePriceChange()} disabled={!priceChangeProduct || updateProduct.isPending}>
+            {updateProduct.isPending ? 'Guardando...' : 'Guardar precio'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={isProductSearchOpen} onClose={() => setIsProductSearchOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ fontWeight: 900 }}>Buscar productos (Ctrl+B)</DialogTitle>
