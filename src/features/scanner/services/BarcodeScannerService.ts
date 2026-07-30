@@ -97,6 +97,7 @@ export class BarcodeScannerService {
   private async startDecoding(videoElement: HTMLVideoElement, callbacks: ScannerCallbacks): Promise<void> {
     if (!this.mediaStream) return;
     try {
+      const { BrowserMultiFormatReader } = await import('@zxing/browser');
       const reader = new BrowserMultiFormatReader();
       this.scannerControls = await reader.decodeFromStream(this.mediaStream, videoElement, (result) => {
         if (!result || !this.isScanning) return;
@@ -109,4 +110,3 @@ export class BarcodeScannerService {
     }
   }
 }
-import { BrowserMultiFormatReader } from '@zxing/browser';
