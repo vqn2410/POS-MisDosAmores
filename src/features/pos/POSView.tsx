@@ -49,6 +49,7 @@ import { ProductNotFoundAlert } from './components/ProductNotFoundAlert';
 import { parseQuickVariableProduct } from './utils/parseQuickVariableProduct';
 import { calculateCartTotals } from './utils/calculateCartTotals';
 import { POSStockEntryModal } from './components/POSStockEntryModal';
+import { ProductDrawerEditor } from '../products/components/ProductDrawerEditor';
 
 
 export const POSView: React.FC = () => {
@@ -93,6 +94,7 @@ export const POSView: React.FC = () => {
   const [productSearchTerm, setProductSearchTerm] = React.useState('');
   const [selectedSearchProduct, setSelectedSearchProduct] = React.useState<Product | null>(null);
   const [isPriceChangeOpen, setIsPriceChangeOpen] = React.useState(false);
+  const [isProductCreateOpen, setIsProductCreateOpen] = React.useState(false);
   const [priceChangeCode, setPriceChangeCode] = React.useState('');
   const [priceChangeProduct, setPriceChangeProduct] = React.useState<Product | null>(null);
   const [newPrice, setNewPrice] = React.useState('');
@@ -794,6 +796,16 @@ export const POSView: React.FC = () => {
           fullWidth
           size="large"
           variant="contained"
+          onClick={() => setIsProductCreateOpen(true)}
+          startIcon={<PackagePlus size={20} />}
+          sx={{ py: 1, borderRadius: 0.5, fontWeight: 800, fontSize: '1rem', minHeight: 42, bgcolor: '#EFF6FF', color: '#1D4ED8', border: '1px solid #2563EB', boxShadow: 'none', '&:hover': { bgcolor: '#DBEAFE' } }}
+        >
+          Agregar producto
+        </Button>
+        <Button
+          fullWidth
+          size="large"
+          variant="contained"
           onClick={openPriceChange}
           startIcon={<Edit2 size={20} />}
           sx={{ py: 1, borderRadius: 0.5, fontWeight: 800, fontSize: '1rem', minHeight: 42, bgcolor: '#FFF7ED', color: '#9A3412', border: '1px solid #C2410C', boxShadow: 'none', '&:hover': { bgcolor: '#FFEDD5' } }}
@@ -941,6 +953,7 @@ export const POSView: React.FC = () => {
       <POSTicketPrintModal sale={lastCompletedSale} onClose={() => setLastCompletedSale(null)} />
       <ProductNotFoundAlert code={missingProductCode} onClose={() => setMissingProductCode(null)} />
       <POSStockEntryModal open={isStockEntryOpen} onClose={() => { setIsStockEntryOpen(false); setStockEntryProduct(null); }} products={products} initialProduct={stockEntryProduct} />
+      <ProductDrawerEditor product={null} open={isProductCreateOpen} onClose={() => { setIsProductCreateOpen(false); focusSearchInput(); }} />
 
       <Dialog open={isPriceChangeOpen} onClose={() => setIsPriceChangeOpen(false)} maxWidth="xs" fullWidth>
         <DialogTitle sx={{ fontWeight: 900 }}>Cambiar precio</DialogTitle>
