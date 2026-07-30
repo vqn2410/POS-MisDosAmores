@@ -37,6 +37,7 @@ import {
   Receipt,
   ArrowDownCircle,
   ArrowUpCircle,
+  X,
 } from 'lucide-react';
 import { usePOSStore } from './store/usePOSStore';
 import { useNotificationStore } from '../../store/useNotificationStore';
@@ -112,6 +113,7 @@ export const POSView: React.FC = () => {
   const [productModifyCode, setProductModifyCode] = React.useState('');
   const [cashMovementType, setCashMovementType] = React.useState<'INCOME' | 'WITHDRAWAL'>('INCOME');
   const [isCashMovementOpen, setIsCashMovementOpen] = React.useState(false);
+  const [isFullscreen, setIsFullscreen] = React.useState(false);
   const [priceChangeCode, setPriceChangeCode] = React.useState('');
   const [priceChangeProduct, setPriceChangeProduct] = React.useState<Product | null>(null);
   const [newPrice, setNewPrice] = React.useState('');
@@ -133,6 +135,13 @@ export const POSView: React.FC = () => {
   React.useEffect(() => {
     focusSearchInput();
   }, [focusSearchInput]);
+
+  React.useEffect(() => {
+    const syncFullscreen = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener('fullscreenchange', syncFullscreen);
+    document.documentElement.requestFullscreen().catch(() => {});
+    return () => document.removeEventListener('fullscreenchange', syncFullscreen);
+  }, []);
 
   React.useEffect(() => {
     ticketScrollRef.current?.scrollTo({ top: ticketScrollRef.current.scrollHeight, behavior: 'smooth' });
@@ -449,10 +458,15 @@ export const POSView: React.FC = () => {
         fontFamily: 'Arial, sans-serif',
       }}
     >
-      <Box sx={{ px: 1, py: 0.45, bgcolor: '#2F66D0', borderTop: '1px solid #FFFFFF', borderBottom: '2px solid #1E4C9A' }}>
+      <Box sx={{ px: 1, py: 0.45, bgcolor: '#2F66D0', borderTop: '1px solid #FFFFFF', borderBottom: '2px solid #1E4C9A', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Typography sx={{ color: '#FFFFFF', fontWeight: 900, fontSize: '1.15rem', textShadow: '1px 1px #173B78' }}>
           VENTA DE PRODUCTOS · Ticket actual
         </Typography>
+        {isFullscreen && (
+          <IconButton size="small" onClick={() => document.exitFullscreen()} sx={{ color: '#FFFFFF', bgcolor: '#DC2626', borderRadius: 0.5, '&:hover': { bgcolor: '#B91C1C' } }} aria-label="Salir de pantalla completa">
+            <X size={20} />
+          </IconButton>
+        )}
       </Box>
 
       {/* Scanner row, intentionally dense to ease migration from legacy POS terminals. */}
