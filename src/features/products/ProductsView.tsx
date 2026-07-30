@@ -32,10 +32,7 @@ import { StockEntryDialog } from './components/StockEntryDialog';
 import { useNotificationStore } from '../../store/useNotificationStore';
 import * as fs from '../../services/firestoreService';
 
-const FIAMBRE_CODES = new Set([
-  '700', '701', '702', '703', '704', '705', '706', '707', '708', '709', '710', '711', '712', '713', '714',
-  '715', '716', '717', '718', '719', '720', '721', '722', '723', '724', '730', '731', '732', '733', '734',
-]);
+const FIAMBRE_CODES = new Set(Array.from({ length: 40 }, (_, index) => String(700 + index)));
 const FIAMBRE_NAMES = [
   'jamon cocido sadia', 'jamon cocido 214', 'paleta de cerdo', 'jamon cocido luvianca', 'jamon cocido calchaqui',
   'jamon cocido natural campo austral', 'jamon crudo', 'salame 214', 'mortadela calchaqui', 'salchichon primavera 214',
