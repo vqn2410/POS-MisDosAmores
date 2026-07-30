@@ -240,6 +240,42 @@ const AppContent: React.FC = () => {
     }
   };
 
+  const handleOpenScanner = async () => {
+    if (!window.isSecureContext) {
+      addNotification({
+        title: 'Se requiere conexión segura',
+        message: 'La cámara sólo funciona con HTTPS. Abrí la dirección https:// de Vite en el celular.',
+        type: 'warning',
+      });
+      return;
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      addNotification({
+        title: 'Cámara no disponible',
+        message: 'Este navegador no permite acceder a la cámara.',
+        type: 'error',
+      });
+      return;
+    }
+
+    try {
+      // Request permission from the button click, as required by mobile browsers.
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } } });
+      stream.getTracks().forEach((track) => track.stop());
+      setIsScannerOpen(true);
+    } catch (error) {
+      const denied = error instanceof DOMException && error.name === 'NotAllowedError';
+      addNotification({
+        title: denied ? 'Permiso de cámara denegado' : 'No se pudo abrir la cámara',
+        message: denied
+          ? 'Habilitá el permiso de cámara para este sitio desde los ajustes del navegador y volvé a intentar.'
+          : 'Verificá que no haya otra aplicación usando la cámara e intentá nuevamente.',
+        type: 'error',
+      });
+    }
+  };
+
   const renderActiveView = () => {
     switch (activeTabId) {
       case 'dashboard':
@@ -249,9 +285,9 @@ const AppContent: React.FC = () => {
           if (isQuickSaleMode) {
             return <QuickSaleView onBack={() => setIsQuickSaleMode(false)} />;
           }
-          return <MobilePOSView onOpenScanner={() => setIsScannerOpen(true)} />;
+          return <MobilePOSView onOpenScanner={() => void handleOpenScanner()} />;
         }
-        return <POSView />;
+        return <POSView onOpenScanner={() => void handleOpenScanner()} />;
       case 'products':
         return <ProductsView />;
       case 'stock':
@@ -339,7 +375,7 @@ const AppContent: React.FC = () => {
         </Box>
 
         {/* Mobile Fixed Navigation Bar */}
-        <MobileNavBar onOpenScanner={() => setIsScannerOpen(true)} />
+        <MobileNavBar onOpenScanner={() => void handleOpenScanner()} />
 
         {/* Bottom Real-time Status Bar (Desktop) */}
         <Box sx={{ display: { xs: 'none', md: isPosFullscreen ? 'none' : 'block' } }}>

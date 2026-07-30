@@ -16,14 +16,25 @@ import {
   DialogActions,
   CircularProgress,
 } from '@mui/material';
-import { Download, CheckCircle2, Receipt, XCircle, Printer } from 'lucide-react';
+import { Download, CheckCircle2, Receipt, XCircle, Printer, ArrowLeft } from 'lucide-react';
 import { useSales, useUpdateSale } from '../../hooks/useSales';
 import { useUpdateProduct } from '../../hooks/useProducts';
 import { POSTicketPrintModal } from '../pos/components/POSTicketPrintModal';
 import type { Sale } from '../../types';
+import { useWorkspaceStore } from '../../store/useWorkspaceStore';
+
+function formatIssuedAt(value: unknown): string {
+  const firestoreTimestamp = value as { toDate?: () => Date } | null;
+  const date = firestoreTimestamp?.toDate?.() ?? new Date(value as string);
+
+  return Number.isNaN(date.getTime())
+    ? 'Sin fecha'
+    : date.toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' });
+}
 
 export const BillingView: React.FC = () => {
   const { data: sales = [] } = useSales();
+  const setActiveTab = useWorkspaceStore((state) => state.setActiveTab);
 
   const updateSale = useUpdateSale();
   const updateProduct = useUpdateProduct();
@@ -97,12 +108,17 @@ export const BillingView: React.FC = () => {
            Consulta, impresión y anulación de comprobantes emitidos.
           </Typography>
         </Box>
-        <Chip
-          icon={<CheckCircle2 size={18} />}
-          label="ARCA WSAA: Activo & Timbrando"
-          color="success"
-          sx={{ fontWeight: 800, fontSize: '0.95rem', py: 2.5, px: 1, borderRadius: 3 }}
-        />
+        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <Button variant="outlined" startIcon={<ArrowLeft size={18} />} onClick={() => setActiveTab('pos')} sx={{ borderRadius: 3, minHeight: 44, fontWeight: 800 }}>
+            Volver al POS
+          </Button>
+          <Chip
+            icon={<CheckCircle2 size={18} />}
+            label="ARCA WSAA: Activo & Timbrando"
+            color="success"
+            sx={{ fontWeight: 800, fontSize: '0.95rem', py: 2.5, px: 1, borderRadius: 3 }}
+          />
+        </Box>
       </Box>
 
       <Typography variant="h5" sx={{ fontWeight: 900, mb: 2, display: 'flex', alignItems: 'center', gap: 1, color: '#0F172A' }}>
@@ -113,8 +129,9 @@ export const BillingView: React.FC = () => {
         <Table>
           <TableHead sx={{ bgcolor: '#F8FAFC' }}>
             <TableRow>
-              <TableCell sx={{ fontWeight: 800, fontSize: '1rem' }}>Ticket</TableCell>
-              <TableCell sx={{ fontWeight: 800, fontSize: '1rem' }}>Cliente</TableCell>
+               <TableCell sx={{ fontWeight: 800, fontSize: '1rem' }}>Ticket</TableCell>
+               <TableCell sx={{ fontWeight: 800, fontSize: '1rem' }}>Fecha y hora de emisión</TableCell>
+               <TableCell sx={{ fontWeight: 800, fontSize: '1rem' }}>Cliente</TableCell>
               <TableCell sx={{ fontWeight: 800, fontSize: '1rem' }}>Tipo</TableCell>
               <TableCell sx={{ fontWeight: 800, fontSize: '1rem' }}>Monto</TableCell>
               <TableCell sx={{ fontWeight: 800, fontSize: '1rem' }}>Estado</TableCell>
@@ -125,7 +142,7 @@ export const BillingView: React.FC = () => {
           <TableBody>
             {comprobantes.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} align="center" sx={{ py: 4 }}>
+                <TableCell colSpan={8} align="center" sx={{ py: 4 }}>
                   <Typography variant="body1" color="text.secondary" sx={{ fontWeight: 600 }}>
                     No hay comprobantes emitidos aún.
                   </Typography>
@@ -135,6 +152,9 @@ export const BillingView: React.FC = () => {
               comprobantes.map((c) => (
                 <TableRow key={c.id} hover sx={{ minHeight: 64 }}>
                   <TableCell sx={{ fontWeight: 700, fontFamily: 'monospace' }}>{c.ticketNumber}</TableCell>
+                  <TableCell sx={{ whiteSpace: 'nowrap', color: '#475569', fontWeight: 600 }}>
+                    {formatIssuedAt(c.createdAt)}
+                  </TableCell>
                   <TableCell>
                     <Typography variant="body1" sx={{ fontWeight: 800 }}>{c.receiverName}</Typography>
                   </TableCell>

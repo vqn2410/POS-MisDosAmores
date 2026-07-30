@@ -1,6 +1,6 @@
 import React from 'react';
 import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, TextField, Typography } from '@mui/material';
-import { Barcode, PackagePlus } from 'lucide-react';
+import { Barcode, PackageMinus, PackagePlus } from 'lucide-react';
 import type { KardexMovement, Product } from '../../../types';
 import { useCreateKardexMovement } from '../../../hooks/useKardex';
 import { useAuthStore } from '../../../store/useAuthStore';
@@ -10,9 +10,10 @@ interface POSStockEntryModalProps {
   onClose: () => void;
   products: Product[];
   initialProduct?: Product | null;
+  mode: 'IN' | 'OUT';
 }
 
-export const POSStockEntryModal: React.FC<POSStockEntryModalProps> = ({ open, onClose, products, initialProduct = null }) => {
+export const POSStockEntryModal: React.FC<POSStockEntryModalProps> = ({ open, onClose, products, initialProduct = null, mode }) => {
   const barcodeRef = React.useRef<HTMLInputElement>(null);
   const createKardex = useCreateKardexMovement();
   const { user, activeBranch } = useAuthStore();
@@ -47,53 +48,56 @@ export const POSStockEntryModal: React.FC<POSStockEntryModalProps> = ({ open, on
 
   const parsedQuantity = Number(quantity.replace(',', '.'));
   const isValidQuantity = Number.isFinite(parsedQuantity) && parsedQuantity > 0;
+  const hasEnoughStock = !product || parsedQuantity <= product.stock;
+  const isEntry = mode === 'IN';
 
-  const handleAddStock = () => {
-    if (!product || !isValidQuantity) return;
+  const handleAdjustStock = () => {
+    if (!product || !isValidQuantity || (!isEntry && !hasEnoughStock)) return;
     const movement: Omit<KardexMovement, 'id'> = {
       productId: product.id,
       productName: product.name,
       productSku: product.sku,
       branchId: activeBranch?.id || 'br-01',
       branchName: activeBranch?.name || 'Sucursal Principal',
-      type: 'IN_PURCHASE',
+      type: isEntry ? 'IN_PURCHASE' : 'OUT_ADJUSTMENT',
       quantity: parsedQuantity,
       previousStock: product.stock,
-      newStock: product.stock + parsedQuantity,
+      newStock: isEntry ? product.stock + parsedQuantity : product.stock - parsedQuantity,
       unitCost: product.costPrice,
-      reference: `POS-INGRESO-${Math.floor(1000 + Math.random() * 9000)}`,
-      notes: 'Ingreso de stock desde POS',
+      reference: `POS-${isEntry ? 'INGRESO' : 'SALIDA'}-${Math.floor(1000 + Math.random() * 9000)}`,
+      notes: `${isEntry ? 'Ingreso' : 'Salida'} de stock desde POS`,
       createdAt: new Date().toISOString(),
       userName: user?.fullName || 'Sistema',
     };
-    createKardex.mutate(movement, { onSuccess: onClose, onError: () => setError('No se pudo registrar el ingreso de stock.') });
+    createKardex.mutate(movement, { onSuccess: onClose, onError: () => setError(`No se pudo registrar la ${isEntry ? 'entrada' : 'salida'} de stock.`) });
   };
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
       <DialogTitle sx={{ fontWeight: 900, display: 'flex', alignItems: 'center', gap: 1 }}>
-        <PackagePlus color="#15803D" /> Agregar stock desde POS
+        {isEntry ? <PackagePlus color="#15803D" /> : <PackageMinus color="#B91C1C" />} {isEntry ? 'Agregar' : 'Quitar'} stock desde POS
       </DialogTitle>
       <DialogContent>
-        <Typography color="text.secondary" sx={{ mb: 2 }}>Escaneá el código de barras del producto para registrar una entrada de mercadería.</Typography>
+        <Typography color="text.secondary" sx={{ mb: 2 }}>Escaneá el código de barras del producto para registrar una {isEntry ? 'entrada' : 'salida'} de mercadería.</Typography>
         <Box component="form" onSubmit={(event) => { event.preventDefault(); findProduct(); }} sx={{ display: 'flex', gap: 1 }}>
           <TextField inputRef={barcodeRef} fullWidth label="Código de barras" value={barcode} onChange={(event) => setBarcode(event.target.value)} slotProps={{ input: { startAdornment: <Barcode size={20} />, sx: { minHeight: 56, fontSize: '1.1rem', fontWeight: 800 } } }} />
           <Button type="submit" variant="outlined" sx={{ minWidth: 105, fontWeight: 800 }}>Buscar</Button>
         </Box>
         {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
         {product && (
-          <Box sx={{ mt: 2.5, p: 2.5, bgcolor: '#F0FDF4', border: '1px solid #86EFAC', borderRadius: 3 }}>
-            <Typography variant="h6" sx={{ fontWeight: 900, color: '#14532D' }}>{product.name}</Typography>
-            <Typography sx={{ mt: 0.5, fontWeight: 700, color: '#166534' }}>Stock actual: {product.stock} {product.unit}</Typography>
-            <TextField id="pos-stock-quantity" autoFocus fullWidth type="number" label="Cantidad a agregar" value={quantity} onChange={(event) => setQuantity(event.target.value)} sx={{ mt: 2.5, bgcolor: '#FFFFFF' }} slotProps={{ htmlInput: { min: 0.001, step: 0.001 }, input: { sx: { minHeight: 56, fontSize: '1.1rem', fontWeight: 800 } } }} />
-            {isValidQuantity && <Typography sx={{ mt: 1.5, fontWeight: 900, color: '#166534' }}>Nuevo stock: {product.stock + parsedQuantity} {product.unit}</Typography>}
+          <Box sx={{ mt: 2.5, p: 2.5, bgcolor: isEntry ? '#F0FDF4' : '#FEF2F2', border: '1px solid', borderColor: isEntry ? '#86EFAC' : '#FCA5A5', borderRadius: 3 }}>
+            <Typography variant="h6" sx={{ fontWeight: 900, color: isEntry ? '#14532D' : '#7F1D1D' }}>{product.name}</Typography>
+            <Typography sx={{ mt: 0.5, fontWeight: 700, color: isEntry ? '#166534' : '#B91C1C' }}>Stock actual: {product.stock} {product.unit}</Typography>
+            <TextField id="pos-stock-quantity" autoFocus fullWidth type="number" label={`Cantidad a ${isEntry ? 'agregar' : 'quitar'}`} value={quantity} onChange={(event) => setQuantity(event.target.value)} sx={{ mt: 2.5, bgcolor: '#FFFFFF' }} slotProps={{ htmlInput: { min: 0.001, step: 0.001 }, input: { sx: { minHeight: 56, fontSize: '1.1rem', fontWeight: 800 } } }} />
+            {!isEntry && isValidQuantity && !hasEnoughStock && <Alert severity="warning" sx={{ mt: 1.5 }}>La cantidad supera el stock disponible.</Alert>}
+            {isValidQuantity && hasEnoughStock && <Typography sx={{ mt: 1.5, fontWeight: 900, color: isEntry ? '#166534' : '#B91C1C' }}>Nuevo stock: {isEntry ? product.stock + parsedQuantity : product.stock - parsedQuantity} {product.unit}</Typography>}
           </Box>
         )}
       </DialogContent>
       <DialogActions sx={{ p: 2, gap: 1 }}>
         <Button onClick={onClose} disabled={createKardex.isPending}>Cancelar</Button>
-        <Button variant="contained" color="success" startIcon={<PackagePlus size={18} />} onClick={handleAddStock} disabled={!product || !isValidQuantity || createKardex.isPending}>
-          {createKardex.isPending ? 'Agregando...' : 'Confirmar ingreso'}
+        <Button variant="contained" color={isEntry ? 'success' : 'error'} startIcon={isEntry ? <PackagePlus size={18} /> : <PackageMinus size={18} />} onClick={handleAdjustStock} disabled={!product || !isValidQuantity || (!isEntry && !hasEnoughStock) || createKardex.isPending}>
+          {createKardex.isPending ? 'Guardando...' : `Confirmar ${isEntry ? 'ingreso' : 'salida'}`}
         </Button>
       </DialogActions>
     </Dialog>

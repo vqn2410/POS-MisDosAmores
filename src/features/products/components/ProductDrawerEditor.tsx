@@ -65,6 +65,11 @@ export const ProductDrawerEditor: React.FC<ProductDrawerEditorProps> = ({ produc
   const [formError, setFormError] = React.useState('');
   const duplicateCodeRef = React.useRef('');
 
+  const isCurrentProductCode = (code: string) => {
+    const normalizedCode = code.trim().toLowerCase();
+    return Boolean(product && (product.barcode?.trim().toLowerCase() === normalizedCode || product.sku?.trim().toLowerCase() === normalizedCode));
+  };
+
   React.useEffect(() => {
     setFormError('');
     duplicateCodeRef.current = '';
@@ -96,7 +101,9 @@ export const ProductDrawerEditor: React.FC<ProductDrawerEditorProps> = ({ produc
   const handleChange = (field: keyof Product, value: any) => {
     if (field === 'barcode') {
       const code = String(value).trim().toLowerCase();
-      const existingProduct = products.find((item) => item.id !== product?.id && (item.barcode.trim().toLowerCase() === code || item.sku.trim().toLowerCase() === code));
+      const existingProduct = isCurrentProductCode(code)
+        ? undefined
+        : products.find((item) => item.id !== product?.id && (item.barcode.trim().toLowerCase() === code || item.sku.trim().toLowerCase() === code));
       if (code && existingProduct) {
         setFormError(`Producto existente: ${existingProduct.name}.`);
         if (duplicateCodeRef.current !== code) {
@@ -130,7 +137,9 @@ export const ProductDrawerEditor: React.FC<ProductDrawerEditorProps> = ({ produc
       setFormError('El código de barras es obligatorio. Se utilizará también como SKU.');
       return;
     }
-    const existingProduct = products.find((item) => item.id !== product?.id && (item.barcode.trim().toLowerCase() === barcode.toLowerCase() || item.sku.trim().toLowerCase() === barcode.toLowerCase()));
+    const existingProduct = isCurrentProductCode(barcode)
+      ? undefined
+      : products.find((item) => item.id !== product?.id && (item.barcode.trim().toLowerCase() === barcode.toLowerCase() || item.sku.trim().toLowerCase() === barcode.toLowerCase()));
     if (existingProduct) {
       setFormError(`Producto existente: ${existingProduct.name}.`);
       return;

@@ -14,6 +14,7 @@ import {
   Divider,
   Alert,
   CircularProgress,
+  MenuItem,
 } from '@mui/material';
 import {
   Banknote,
@@ -52,6 +53,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
 
   const [selectedMethod, setSelectedMethod] = React.useState<ExtendedPaymentMethod>('CASH');
   const [payAmount, setPayAmount] = React.useState<string>('');
+  const [surchargePercent, setSurchargePercent] = React.useState(5);
   const amountRef = React.useRef<HTMLInputElement>(null);
 
   // Mercado Pago QR approval state
@@ -69,9 +71,13 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
   const { grandTotal } = calculateCartTotals(cart, discountGlobal);
   const totalPaid = payments.reduce((acc, p) => acc + p.amount, 0);
   const pendingAmount = Math.max(0, grandTotal - totalPaid);
-  const change = Math.max(0, totalPaid - grandTotal);
+  const hasSurcharge = selectedMethod === 'CARD' || selectedMethod === 'MERCADOPAGO' || selectedMethod === 'CUENTA_DNI';
+  const surchargeAmount = hasSurcharge ? pendingAmount * (surchargePercent / 100) : 0;
+  const checkoutTotal = grandTotal + surchargeAmount;
+  const change = Math.max(0, totalPaid - checkoutTotal);
   const enteredAmount = Number(payAmount.replace(',', '.')) || 0;
-  const changePreview = selectedMethod === 'CASH' ? Math.max(0, totalPaid + enteredAmount - grandTotal) : change;
+  const changePreview = selectedMethod === 'CASH' ? Math.max(0, totalPaid + enteredAmount - checkoutTotal) : change;
+  const amountForMethod = pendingAmount + surchargeAmount;
 
   React.useEffect(() => {
     if (isPaymentModalOpen) {
@@ -82,7 +88,9 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
 
   const handleSelectMethod = (method: ExtendedPaymentMethod) => {
     setSelectedMethod(method);
-    setPayAmount('');
+    const methodHasSurcharge = method === 'CARD' || method === 'MERCADOPAGO' || method === 'CUENTA_DNI';
+    const amount = pendingAmount * (methodHasSurcharge ? 1 + surchargePercent / 100 : 1);
+    setPayAmount(method === 'MERCADOPAGO' || method === 'CUENTA_DNI' ? '' : amount.toFixed(2));
 
     if (method === 'MERCADOPAGO') {
       setMpStatus('WAITING');
@@ -91,7 +99,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
         .createDynamicQR({
           externalReference: `TICK-${Date.now()}`,
           title: 'Venta POS Nexus',
-          totalAmount: pendingAmount > 0 ? pendingAmount : grandTotal,
+          totalAmount: amount,
           items: cart.map((i) => ({ title: i.product.name, quantity: i.quantity, unitPrice: i.unitPrice })),
         })
         .then((res) => setMpQrUrl(res.qrCode))
@@ -99,7 +107,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
     } else if (method === 'CUENTA_DNI') {
       cdniProvider
         .createPayment({
-          amount: pendingAmount > 0 ? pendingAmount : grandTotal,
+          amount,
           externalReference: `TICK-${Date.now()}`,
         })
         .then((res) => {
@@ -112,10 +120,17 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
     }
   };
 
+  const handleSurchargePercentChange = (percent: number) => {
+    setSurchargePercent(percent);
+    if (selectedMethod === 'CARD') {
+      setPayAmount((pendingAmount * (1 + percent / 100)).toFixed(2));
+    }
+  };
+
   const handleApproveMp = (txId: string) => {
     setMpStatus('APPROVED');
     setMpTxId(txId);
-    const amt = pendingAmount > 0 ? pendingAmount : grandTotal;
+    const amt = amountForMethod;
     addPayment({
       method: 'QR',
       amount: amt,
@@ -146,7 +161,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
     });
 
     setCdniPayment(confirmed);
-    const amt = pendingAmount > 0 ? pendingAmount : grandTotal;
+    const amt = amountForMethod;
     addPayment({
       method: 'QR',
       amount: amt,
@@ -169,7 +184,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
       method: selectedMethod === 'MERCADOPAGO' || selectedMethod === 'CUENTA_DNI' ? 'QR' : (selectedMethod as PaymentMethodType),
       amount: amt,
       reference: selectedMethod === 'MERCADOPAGO' ? mpTxId || undefined : cdniPayment?.referenceNumber || undefined,
-      change: selectedMethod === 'CASH' && amt > pendingAmount ? amt - pendingAmount : 0,
+      change: selectedMethod === 'CASH' && amt > checkoutTotal - totalPaid ? amt - (checkoutTotal - totalPaid) : 0,
     });
     setPayAmount('');
   };
@@ -188,24 +203,24 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
             concept: 1,
             docType: customer.taxId ? 80 : 99,
             docNumber: customer.taxId || '00000000',
-            subtotal: grandTotal,
+            subtotal: checkoutTotal,
             taxTotal: 0,
-            grandTotal,
+            grandTotal: checkoutTotal,
           });
         } catch {
           fiscalEvaluation = null;
         }
       }
 
-      const sale = completeSale(ticketNumber);
+      const sale = completeSale(ticketNumber, surchargeAmount);
       if (!sale) return;
 
       if (fiscalEvaluation?.fiscalResult) {
-        sale.notes = `Factura ARCA Emitida. CAE: ${fiscalEvaluation.fiscalResult.cae}`;
+        sale.notes = `${hasSurcharge ? `Recargo ${surchargePercent}%: $${surchargeAmount.toFixed(2)}. ` : ''}Factura ARCA Emitida. CAE: ${fiscalEvaluation.fiscalResult.cae}`;
       } else if (fiscalEvaluation?.internalReceiptNo) {
-        sale.notes = `Comprobante Interno: ${fiscalEvaluation.internalReceiptNo}`;
+        sale.notes = `${hasSurcharge ? `Recargo ${surchargePercent}%: $${surchargeAmount.toFixed(2)}. ` : ''}Comprobante Interno: ${fiscalEvaluation.internalReceiptNo}`;
       } else {
-        sale.notes = `Ticket #${ticketNumber}`;
+        sale.notes = `${hasSurcharge ? `Recargo ${surchargePercent}%: $${surchargeAmount.toFixed(2)}. ` : ''}Ticket #${ticketNumber}`;
       }
 
       const { id: _id, ...saleData } = sale;
@@ -234,13 +249,13 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
     }
   };
 
-  const isCheckoutDisabled = totalPaid < grandTotal;
+  const isCheckoutDisabled = totalPaid < checkoutTotal;
 
   return (
     <Dialog open={isPaymentModalOpen} onClose={closePaymentModal} maxWidth="md" fullWidth slotProps={{ paper: { sx: { borderRadius: 4, p: 1, bgcolor: '#FFFFFF', color: '#0F172A', border: '2px solid #E2E8F0' } } }}>
       <DialogTitle sx={{ fontWeight: 900, fontSize: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#0F172A' }}>
         <span>💳 Procesar Cobro (Pago Mixto / Múltiples Medios)</span>
-        <Chip label={`TOTAL: $${grandTotal.toFixed(2)}`} color="primary" sx={{ fontSize: '1.25rem', fontWeight: 900, py: 2.5, px: 1, borderRadius: 3, bgcolor: '#2563EB', color: '#FFFFFF' }} />
+         <Chip label={`TOTAL: $${checkoutTotal.toFixed(2)}`} color="primary" sx={{ fontSize: '1.55rem', fontWeight: 900, py: 3, px: 1.5, borderRadius: 3, bgcolor: '#2563EB', color: '#FFFFFF' }} />
       </DialogTitle>
       <Divider sx={{ borderColor: '#E2E8F0' }} />
 
@@ -409,6 +424,25 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
               </Grid>
             </Grid>
 
+            {hasSurcharge && (
+              <Paper elevation={0} sx={{ p: 2, mb: 3, borderRadius: 3, bgcolor: '#FFF7ED', border: '2px solid #FED7AA' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+                  <Typography sx={{ fontWeight: 900, color: '#9A3412' }}>Recargo por {selectedMethod === 'CARD' ? 'tarjeta' : 'QR'}:</Typography>
+                  <TextField
+                    select
+                    size="small"
+                    label="Porcentaje"
+                    value={surchargePercent}
+                    onChange={(event) => handleSurchargePercentChange(Number(event.target.value))}
+                    sx={{ minWidth: 130, bgcolor: '#FFFFFF' }}
+                  >
+                    {[5, 6, 7, 8, 9, 10].map((percent) => <MenuItem key={percent} value={percent}>{percent}%</MenuItem>)}
+                  </TextField>
+                  <Typography sx={{ fontWeight: 900, color: '#9A3412' }}>+${surchargeAmount.toFixed(2)}</Typography>
+                </Box>
+              </Paper>
+            )}
+
             {/* Mercado Pago QR Container */}
             {selectedMethod === 'MERCADOPAGO' && (
               <Paper elevation={0} sx={{ p: 2.5, mb: 3, borderRadius: 3.5, bgcolor: '#F0F9FF', border: '2px solid #BAE6FD', textAlign: 'center' }}>
@@ -512,7 +546,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault();
-                      if (totalPaid >= grandTotal) {
+                      if (totalPaid >= checkoutTotal) {
                         handleConfirmCheckout();
                       } else {
                         handleAddPayment();
@@ -569,7 +603,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                 <Typography variant="body1" sx={{ fontWeight: 600, color: '#475569' }}>Total de Venta:</Typography>
                 <Typography variant="body1" sx={{ fontWeight: 900, color: '#0F172A' }}>
-                  ${grandTotal.toFixed(2)}
+                  ${checkoutTotal.toFixed(2)}
                 </Typography>
               </Box>
 
@@ -582,8 +616,8 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
 
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
                 <Typography variant="body1" sx={{ fontWeight: 600, color: '#475569' }}>Saldo Pendiente:</Typography>
-                <Typography variant="body1" sx={{ fontWeight: 900, color: pendingAmount > 0 ? '#DC2626' : '#0F172A' }}>
-                  ${pendingAmount.toFixed(2)}
+                <Typography variant="body1" sx={{ fontWeight: 900, color: checkoutTotal > totalPaid ? '#DC2626' : '#0F172A' }}>
+                  ${Math.max(0, checkoutTotal - totalPaid).toFixed(2)}
                 </Typography>
               </Box>
 

@@ -36,8 +36,14 @@ export const CameraScannerModal: React.FC<CameraScannerModalProps> = ({
         onDetected: (code) => {
           onDetected(code);
         },
-        onError: () => {
-          setCameraError('No se pudo acceder a la cámara trasera. Ingrese el código manualmente.');
+        onError: (error) => {
+          if (!window.isSecureContext) {
+            setCameraError('La cámara requiere HTTPS. Abra la URL https:// del sistema en este dispositivo.');
+          } else if (error.name === 'NotAllowedError') {
+            setCameraError('El permiso de cámara fue denegado. Habilítelo desde los ajustes del navegador.');
+          } else {
+            setCameraError('No se pudo acceder a la cámara trasera. Cierre otras aplicaciones que estén usando la cámara e intente otra vez.');
+          }
         },
       });
     }
@@ -98,7 +104,7 @@ export const CameraScannerModal: React.FC<CameraScannerModalProps> = ({
         >
           <Paper elevation={3} sx={{ px: 2, py: 1, borderRadius: 3, bgcolor: 'rgba(15, 23, 42, 0.85)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.2)' }}>
             <Typography variant="subtitle2" sx={{ fontWeight: 800, color: '#FFFFFF', display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Scan size={18} color="#3B82F6" /> Escáner Activo
+              <Scan size={18} color="#3B82F6" /> Escáner QR y códigos activo
             </Typography>
           </Paper>
 
@@ -134,7 +140,7 @@ export const CameraScannerModal: React.FC<CameraScannerModalProps> = ({
           }}
         >
           <Typography variant="body2" sx={{ color: '#FFFFFF', fontWeight: 700, bgcolor: 'rgba(0,0,0,0.6)', px: 2, py: 0.5, borderRadius: 2 }}>
-            Alinee el código dentro del recuadro
+            Alinee el QR o código dentro del recuadro
           </Typography>
         </Box>
 

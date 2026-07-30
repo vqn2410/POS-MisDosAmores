@@ -78,7 +78,7 @@ interface POSState {
   addPayment: (payment: Omit<SalePayment, 'id'>) => void;
   removePayment: (paymentId: string) => void;
   clearPayments: () => void;
-  completeSale: (ticketNumber: string) => Sale | null;
+  completeSale: (ticketNumber: string, surchargeAmount?: number) => Sale | null;
 }
 
 export const usePOSStore = create<POSState>((set, get) => ({
@@ -429,7 +429,7 @@ export const usePOSStore = create<POSState>((set, get) => ({
 
   clearPayments: () => set({ payments: [] }),
 
-  completeSale: (ticketNumber: string) => {
+  completeSale: (ticketNumber: string, surchargeAmount = 0) => {
     const { cart, customer, payments, notes, discountGlobal } = get();
     if (cart.length === 0) return null;
 
@@ -448,10 +448,10 @@ export const usePOSStore = create<POSState>((set, get) => ({
       customerId: customer.id,
       customerName: customer.name,
       items: [...cart],
-      subtotal,
+      subtotal: subtotal + surchargeAmount,
       taxTotal,
       discountTotal,
-      grandTotal,
+      grandTotal: grandTotal + surchargeAmount,
       status: 'COMPLETED',
       payments: [...payments],
       notes,

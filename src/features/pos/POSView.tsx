@@ -32,12 +32,14 @@ import {
   MoreVertical,
   Store as StoreIcon,
   PackagePlus,
+  PackageMinus,
   Edit2,
   Printer,
   Receipt,
   ArrowDownCircle,
   ArrowUpCircle,
   X,
+  Camera,
 } from 'lucide-react';
 import { usePOSStore } from './store/usePOSStore';
 import { useNotificationStore } from '../../store/useNotificationStore';
@@ -62,7 +64,11 @@ import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 import { logoutFirebase } from '../auth/services/firebaseAuthService';
 
 
-export const POSView: React.FC = () => {
+interface POSViewProps {
+  onOpenScanner: () => void;
+}
+
+export const POSView: React.FC<POSViewProps> = ({ onOpenScanner }) => {
   const {
     cart,
     customer,
@@ -102,6 +108,7 @@ export const POSView: React.FC = () => {
   const [discountTarget, setDiscountTarget] = React.useState<'GLOBAL' | string | null>(null);
   const [discountValue, setDiscountValue] = React.useState('');
   const [isStockEntryOpen, setIsStockEntryOpen] = React.useState(false);
+  const [stockAdjustmentMode, setStockAdjustmentMode] = React.useState<'IN' | 'OUT'>('IN');
   const [outOfStockProduct, setOutOfStockProduct] = React.useState<Product | null>(null);
   const [stockEntryProduct, setStockEntryProduct] = React.useState<Product | null>(null);
   const [isProductSearchOpen, setIsProductSearchOpen] = React.useState(false);
@@ -216,6 +223,7 @@ export const POSView: React.FC = () => {
       }
 
       if (trimmed.toLowerCase() === 's') {
+        setStockAdjustmentMode('IN');
         setIsStockEntryOpen(true);
         setSearchTerm('');
         return;
@@ -321,6 +329,13 @@ export const POSView: React.FC = () => {
   const openStockEntry = () => {
     setStockEntryProduct(outOfStockProduct);
     setOutOfStockProduct(null);
+    setStockAdjustmentMode('IN');
+    setIsStockEntryOpen(true);
+  };
+
+  const openStockRemoval = () => {
+    setStockEntryProduct(null);
+    setStockAdjustmentMode('OUT');
     setIsStockEntryOpen(true);
   };
 
@@ -476,7 +491,7 @@ export const POSView: React.FC = () => {
       </Box>
 
       {/* Scanner row, intentionally dense to ease migration from legacy POS terminals. */}
-      <Paper elevation={0} square sx={{ p: 0.7, bgcolor: '#F3F3F3', borderBottom: '1px solid #AFAFAF', display: 'flex', alignItems: 'center', gap: 1 }}>
+      <Paper elevation={0} square sx={{ p: 0.7, bgcolor: '#F3F3F3', borderBottom: '1px solid #AFAFAF', display: 'flex', alignItems: 'center', gap: 1, flexWrap: { xs: 'wrap', md: 'nowrap' } }}>
         <Typography sx={{ color: '#1E4EBC', fontWeight: 800, fontSize: '0.9rem', whiteSpace: 'nowrap' }}>Código del Producto:</Typography>
         <TextField
           inputRef={searchInputRef}
@@ -525,6 +540,14 @@ export const POSView: React.FC = () => {
           sx={{ minWidth: 205, height: 36, borderRadius: 0.5, fontSize: '0.82rem', fontWeight: 800, color: '#1C1C1C', borderColor: '#2F66D0', bgcolor: '#FFFFFF' }}
         >
           ✓ ENTER · Agregar producto
+        </Button>
+        <Button
+          variant="contained"
+          onClick={onOpenScanner}
+          startIcon={<Camera size={18} />}
+          sx={{ minWidth: 130, height: 36, borderRadius: 0.5, fontSize: '0.82rem', fontWeight: 800 }}
+        >
+          Escanear QR
         </Button>
       </Paper>
 
@@ -928,11 +951,21 @@ export const POSView: React.FC = () => {
           fullWidth
           size="large"
           variant="contained"
-          onClick={() => setIsStockEntryOpen(true)}
+          onClick={() => { setStockAdjustmentMode('IN'); setIsStockEntryOpen(true); }}
           startIcon={<PackagePlus size={20} />}
           sx={{ py: 1, borderRadius: 0.5, fontWeight: 800, fontSize: '1rem', minHeight: 42, bgcolor: '#E8F5E9', color: '#123D16', border: '1px solid #26702A', boxShadow: 'none', '&:hover': { bgcolor: '#D2EBD4' } }}
         >
           Agregar stock
+        </Button>
+        <Button
+          fullWidth
+          size="large"
+          variant="contained"
+          onClick={openStockRemoval}
+          startIcon={<PackageMinus size={20} />}
+          sx={{ py: 1, borderRadius: 0.5, fontWeight: 800, fontSize: '1rem', minHeight: 42, bgcolor: '#FEF2F2', color: '#991B1B', border: '1px solid #DC2626', boxShadow: 'none', '&:hover': { bgcolor: '#FEE2E2' } }}
+        >
+          Quitar stock
         </Button>
         <Button
           fullWidth
@@ -1104,7 +1137,7 @@ export const POSView: React.FC = () => {
       <POSSuspendedModal open={isSuspendedModalOpen} onClose={() => setIsSuspendedModalOpen(false)} />
       <POSTicketPrintModal sale={lastCompletedSale} onClose={() => setLastCompletedSale(null)} />
       <ProductNotFoundAlert code={missingProductCode} onClose={() => setMissingProductCode(null)} />
-      <POSStockEntryModal open={isStockEntryOpen} onClose={() => { setIsStockEntryOpen(false); setStockEntryProduct(null); }} products={products} initialProduct={stockEntryProduct} />
+      <POSStockEntryModal open={isStockEntryOpen} onClose={() => { setIsStockEntryOpen(false); setStockEntryProduct(null); }} products={products} initialProduct={stockEntryProduct} mode={stockAdjustmentMode} />
       <CashMovementModal open={isCashMovementOpen} type={cashMovementType} onClose={() => setIsCashMovementOpen(false)} onConfirm={createCashMovementFromPos} isPending={createCashMovement.isPending} />
       <ProductDrawerEditor product={productEditorProduct} open={isProductEditorOpen} onClose={() => { setIsProductEditorOpen(false); setProductEditorProduct(null); focusSearchInput(); }} />
 

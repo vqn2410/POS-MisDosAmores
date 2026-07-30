@@ -4,8 +4,6 @@ import { Printer, CheckCircle } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import type { Sale } from '../../../types';
 import { useCompany } from '../../../hooks/useCompany';
-import { useNotificationStore } from '../../../store/useNotificationStore';
-import { printSaleWithQzTray } from '../../../services/qzTrayPrintService';
 
 interface POSTicketPrintModalProps {
   sale: Sale | null;
@@ -32,9 +30,6 @@ function getFiscalQrData(sale: Sale, company: { name?: string; taxId?: string } 
 
 export const POSTicketPrintModal: React.FC<POSTicketPrintModalProps> = ({ sale, onClose }) => {
   const { data: company } = useCompany();
-  const { addNotification } = useNotificationStore();
-  const [isQzPrinting, setIsQzPrinting] = React.useState(false);
-
   if (!sale) return null;
 
   const isFiscal = sale.notes?.includes('CAE') ?? false;
@@ -44,30 +39,22 @@ export const POSTicketPrintModal: React.FC<POSTicketPrintModalProps> = ({ sale, 
     window.print();
   };
 
-  const handleQzPrint = async () => {
-    setIsQzPrinting(true);
-    try {
-      await printSaleWithQzTray(sale, company);
-      addNotification({ title: 'Ticket enviado a impresora', message: 'Impresión directa realizada con QZ Tray.', type: 'success' });
-    } catch (error) {
-      addNotification({
-        title: 'No se pudo imprimir con QZ Tray',
-        message: error instanceof Error ? error.message : 'Verificá que QZ Tray esté instalado, abierto y autorizado.',
-        type: 'error',
-      });
-    } finally {
-      setIsQzPrinting(false);
+  const handleKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      handlePrint();
     }
+    if (event.key === 'Escape') onClose();
   };
 
   return (
-    <Dialog open={Boolean(sale)} onClose={onClose} maxWidth="xs" fullWidth slotProps={{ paper: { sx: { borderRadius: 4, p: 1 } } }}>
+    <Dialog open={Boolean(sale)} onClose={onClose} onKeyDown={handleKeyDown} maxWidth="xs" fullWidth slotProps={{ paper: { sx: { borderRadius: 4, p: 1 } } }}>
       <style>{`
         @media print {
           @page { size: 58mm auto; margin: 0; }
           body * { visibility: hidden !important; }
           #printable-ticket, #printable-ticket * { visibility: visible !important; }
-          #printable-ticket {
+           #printable-ticket {
             position: fixed;
             left: 0;
             top: 0;
@@ -81,7 +68,8 @@ export const POSTicketPrintModal: React.FC<POSTicketPrintModalProps> = ({ sale, 
             font-family: "Courier New", monospace !important;
             font-size: 10px !important;
             line-height: 1.25 !important;
-          }
+            }
+           .ticket-print-space { height: 20mm !important; }
         }
       `}</style>
       <DialogTitle sx={{ fontWeight: 900, textAlign: 'center', fontSize: '1.4rem' }}>
@@ -113,8 +101,11 @@ export const POSTicketPrintModal: React.FC<POSTicketPrintModalProps> = ({ sale, 
           <Typography className="ticket-address" variant="caption" align="center" sx={{ display: 'block' }}>
             {company?.address || ''}
           </Typography>
-          <Typography className="ticket-contact" variant="caption" align="center" sx={{ display: 'block', mb: 1 }}>
-            CUIT: {company?.taxId || ''} | Tel: {company?.phone || ''}
+          <Typography className="ticket-tax-id" variant="caption" align="center" sx={{ display: 'block' }}>
+            CUIT: {company?.taxId || ''}
+          </Typography>
+          <Typography className="ticket-phone" variant="caption" align="center" sx={{ display: 'block', mb: 1 }}>
+            Tel: {company?.phone || ''}
           </Typography>
           <Divider className="ticket-divider" sx={{ borderStyle: 'dashed', my: 1 }} />
 
@@ -183,21 +174,13 @@ export const POSTicketPrintModal: React.FC<POSTicketPrintModalProps> = ({ sale, 
           <Typography className="ticket-footer" variant="caption" align="center" sx={{ display: 'block', mt: 1, fontWeight: 700 }}>
             Gracias por su compra
           </Typography>
+          <Box className="ticket-print-space" sx={{ height: 0 }} />
         </Box>
       </DialogContent>
 
       <DialogActions sx={{ p: 2, justifyContent: 'space-between' }}>
         <Button onClick={onClose} variant="outlined" sx={{ borderRadius: 3, minHeight: 48, fontWeight: 700 }}>
-          Cerrar
-        </Button>
-        <Button
-          onClick={handleQzPrint}
-          variant="contained"
-          color="success"
-          disabled={isQzPrinting}
-          sx={{ borderRadius: 3, minHeight: 48, px: 2, fontWeight: 800 }}
-        >
-          {isQzPrinting ? 'Imprimiendo...' : 'Imprimir directo (QZ Tray)'}
+          Cerrar (Esc)
         </Button>
         <Button
           onClick={handlePrint}
@@ -206,7 +189,7 @@ export const POSTicketPrintModal: React.FC<POSTicketPrintModalProps> = ({ sale, 
           startIcon={<Printer size={20} />}
           sx={{ borderRadius: 3, minHeight: 48, px: 3, fontWeight: 800 }}
         >
-          Imprimir Ticket
+          Imprimir Ticket (Enter)
         </Button>
       </DialogActions>
     </Dialog>

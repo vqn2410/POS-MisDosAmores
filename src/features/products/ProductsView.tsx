@@ -20,8 +20,9 @@ import {
   DialogContent,
   DialogTitle,
   TablePagination,
+  TableContainer,
 } from '@mui/material';
-import { Plus, Search, Edit2, Trash2, Filter, Upload, PackagePlus, Tags, Scale } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Filter, Upload, Download, PackagePlus, Tags, Scale } from 'lucide-react';
 import { ProductImage } from '../../components/common/ProductImage';
 import type { Product } from '../../types';
 import { useProducts, useDeleteProduct } from '../../hooks/useProducts';
@@ -88,6 +89,35 @@ export const ProductsView: React.FC = () => {
 
   const handleDeleteProduct = (id: string) => {
     deleteProduct.mutate(id);
+  };
+
+  const handleExportInventory = () => {
+    const headers = ['sku', 'codigo_barras', 'nombre', 'descripcion', 'categoria', 'costo', 'precio_venta', 'stock', 'stock_minimo', 'unidad', 'tipo_venta', 'caja', 'activo', 'controla_stock', 'impuesto'];
+    const escapeCsv = (value: string | number | boolean | undefined) => `"${String(value ?? '').replaceAll('"', '""')}"`;
+    const rows = products.map((product) => [
+      product.sku,
+      product.barcode,
+      product.name,
+      product.description,
+      product.categoryName || 'General',
+      product.costPrice,
+      product.salePrice,
+      product.stock,
+      product.minStock,
+      product.unit,
+      product.saleType || 'UNIT',
+      product.cashBoxType || 'KIOSK',
+      product.isActive ? 'SI' : 'NO',
+      product.tracksStock === false ? 'NO' : 'SI',
+      product.taxRate,
+    ]);
+    const csv = `\uFEFF${[headers, ...rows].map((row) => row.map(escapeCsv).join(',')).join('\n')}`;
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `inventario_completo_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
   };
 
   const handleCreateCategory = async () => {
@@ -178,9 +208,9 @@ export const ProductsView: React.FC = () => {
   }
 
   return (
-    <Box sx={{ p: 3, bgcolor: '#FFFFFF' }}>
+    <Box sx={{ p: { xs: 1.5, sm: 3 }, bgcolor: '#FFFFFF' }}>
       {/* Header Bar */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, flexDirection: { xs: 'column', lg: 'row' }, gap: 2, mb: 3 }}>
         <Box>
           <Typography variant="h4" sx={{ fontWeight: 900, color: '#0F172A' }}>
             📦 Catálogo de Productos
@@ -189,7 +219,7 @@ export const ProductsView: React.FC = () => {
             Administración centralizada de inventario, código de barras y precios
           </Typography>
         </Box>
-        <Box sx={{ display: 'flex', gap: 1.5 }}>
+        <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', width: { xs: '100%', lg: 'auto' } }}>
           <Button variant="outlined" startIcon={<Tags size={20} />} onClick={() => setIsCategoryDialogOpen(true)} sx={{ borderRadius: 3, fontWeight: 800, minHeight: 48, px: 2.5 }}>
             Categorías
           </Button>
@@ -205,6 +235,9 @@ export const ProductsView: React.FC = () => {
           <Button variant="outlined" startIcon={<Upload size={20} />} onClick={() => setIsImportOpen(true)} sx={{ borderRadius: 3, fontWeight: 800, minHeight: 48, px: 2.5 }}>
             Importar CSV
           </Button>
+          <Button variant="outlined" color="primary" startIcon={<Download size={20} />} onClick={handleExportInventory} sx={{ borderRadius: 3, fontWeight: 800, minHeight: 48, px: 2.5 }}>
+            Exportar inventario
+          </Button>
           <Button
             variant="contained"
             color="primary"
@@ -218,7 +251,7 @@ export const ProductsView: React.FC = () => {
       </Box>
 
       {/* Filter Bar */}
-      <Paper elevation={1} sx={{ p: 2.5, mb: 3, borderRadius: 4, border: '2px solid', borderColor: '#E2E8F0', bgcolor: '#FFFFFF', display: 'flex', gap: 2, alignItems: 'center' }}>
+      <Paper elevation={1} sx={{ p: { xs: 1.5, sm: 2.5 }, mb: 3, borderRadius: 4, border: '2px solid', borderColor: '#E2E8F0', bgcolor: '#FFFFFF', display: 'flex', gap: 2, alignItems: 'center', flexDirection: { xs: 'column', sm: 'row' } }}>
         <TextField
           size="medium"
           placeholder="Buscar por nombre o código de barras..."
@@ -227,7 +260,7 @@ export const ProductsView: React.FC = () => {
               setSearchTerm(e.target.value);
               setPage(0);
             }}
-          sx={{ flexGrow: 1 }}
+          sx={{ flexGrow: 1, width: '100%' }}
           slotProps={{
             input: {
               startAdornment: (
@@ -239,14 +272,15 @@ export const ProductsView: React.FC = () => {
             },
           }}
         />
-        <Button variant="outlined" startIcon={<Filter size={20} />} sx={{ borderRadius: 3, minHeight: 48, fontWeight: 700 }}>
+        <Button variant="outlined" startIcon={<Filter size={20} />} sx={{ borderRadius: 3, minHeight: 48, fontWeight: 700, width: { xs: '100%', sm: 'auto' } }}>
           Filtros Avanzados
         </Button>
       </Paper>
 
       {/* Products Accessible Table */}
       <Paper elevation={1} sx={{ borderRadius: 4, overflow: 'hidden', border: '2px solid', borderColor: '#E2E8F0', bgcolor: '#FFFFFF' }}>
-        <Table>
+        <TableContainer sx={{ overflowX: 'auto' }}>
+        <Table sx={{ minWidth: 950 }}>
           <TableHead sx={{ bgcolor: '#F8FAFC' }}>
             <TableRow>
               <TableCell sx={{ fontWeight: 800, fontSize: '1rem' }}>Imagen</TableCell>
@@ -312,6 +346,7 @@ export const ProductsView: React.FC = () => {
             ))}
           </TableBody>
         </Table>
+        </TableContainer>
         <TablePagination
           component="div"
           count={filteredProducts.length}
