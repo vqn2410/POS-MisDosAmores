@@ -36,6 +36,21 @@ const FIAMBRE_CODES = new Set([
   '700', '701', '702', '703', '704', '705', '706', '707', '708', '709', '710', '711', '712', '713', '714',
   '715', '716', '717', '718', '719', '720', '721', '722', '723', '724', '730', '731', '732', '733', '734',
 ]);
+const FIAMBRE_NAMES = [
+  'jamon cocido sadia', 'jamon cocido 214', 'paleta de cerdo', 'jamon cocido luvianca', 'jamon cocido calchaqui',
+  'jamon cocido natural campo austral', 'jamon crudo', 'salame 214', 'mortadela calchaqui', 'salchichon primavera 214',
+  'matambre cocido de carne', 'bondiola', 'lomo ahumado', 'panceta ahumada', 'queso cheddar la serenissima',
+  'queso barra tybo', 'queso barra punta del agua', 'queso fresco port salud', 'queso fresco punta del agua',
+  'queso fresco lactear', 'queso azul', 'queso sardo semi duro', 'queso sardo duro', 'queso reggianito', 'queso pategras',
+  'muzzarella gauchito', 'muzzarella bari', 'muzzarella san juan', 'muzzarella barraza', 'muzzarella napole',
+];
+
+const normalizeFiambreValue = (value: string) => value
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase();
+
+const normalizeFiambreCode = (value: string) => value.replace(/\D/g, '').replace(/^0+/, '');
 
 export const ProductsView: React.FC = () => {
   const { data: products = [], isLoading, refetch: refetchProducts } = useProducts();
@@ -104,7 +119,12 @@ export const ProductsView: React.FC = () => {
         fiambreCategory = { id, name: 'Fiambre' };
       }
 
-      const matches = products.filter((product) => FIAMBRE_CODES.has(product.sku) || FIAMBRE_CODES.has(product.barcode));
+      const matches = products.filter((product) => {
+        const sku = normalizeFiambreCode(product.sku || '');
+        const barcode = normalizeFiambreCode(product.barcode || '');
+        const name = normalizeFiambreValue(product.name || '');
+        return FIAMBRE_CODES.has(sku) || FIAMBRE_CODES.has(barcode) || FIAMBRE_NAMES.some((fiambreName) => name.includes(fiambreName));
+      });
       if (matches.length === 0) {
         addNotification({ title: 'No se encontraron productos', message: 'No hay productos cargados con los códigos de fiambre indicados.', type: 'warning' });
         return;
