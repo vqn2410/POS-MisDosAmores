@@ -37,6 +37,9 @@ const amountLine = (label: string, amount: string) => `${label.slice(0, LINE_WID
 function buildReceipt(sale: Sale, company?: CompanyPrintData) {
   const lines = [
     '\x1B@',
+    '\x1B!\x00',
+    '\x1BM\x00',
+    '\x1B \x00',
     '\x1Ba\x01',
     '\x1BE\x01',
     `${center(company?.name || 'Mis Dos Amores')}\n`,
