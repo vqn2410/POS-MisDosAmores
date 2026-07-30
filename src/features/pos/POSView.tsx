@@ -33,6 +33,10 @@ import {
   Store as StoreIcon,
   PackagePlus,
   Edit2,
+  Printer,
+  Receipt,
+  ArrowDownCircle,
+  ArrowUpCircle,
 } from 'lucide-react';
 import { usePOSStore } from './store/usePOSStore';
 import { useNotificationStore } from '../../store/useNotificationStore';
@@ -50,6 +54,10 @@ import { parseQuickVariableProduct } from './utils/parseQuickVariableProduct';
 import { calculateCartTotals } from './utils/calculateCartTotals';
 import { POSStockEntryModal } from './components/POSStockEntryModal';
 import { ProductDrawerEditor } from '../products/components/ProductDrawerEditor';
+import { CashMovementModal } from '../cash/components/CashMovementModal';
+import { useCurrentCashSession, useCreateCashMovement } from '../../hooks/useCashSessions';
+import { useSales } from '../../hooks/useSales';
+import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 
 
 export const POSView: React.FC = () => {
@@ -77,6 +85,10 @@ export const POSView: React.FC = () => {
   const updateProduct = useUpdateProduct();
   const { data: customers = [] } = useCustomers();
   const { user } = useAuthStore();
+  const { data: cashSession } = useCurrentCashSession();
+  const createCashMovement = useCreateCashMovement();
+  const { data: sales = [] } = useSales();
+  const openTab = useWorkspaceStore((state) => state.openTab);
 
   const [searchTerm, setSearchTerm] = React.useState('');
   const [weightModalProduct, setWeightModalProduct] = React.useState<Product | null>(null);
@@ -95,6 +107,8 @@ export const POSView: React.FC = () => {
   const [selectedSearchProduct, setSelectedSearchProduct] = React.useState<Product | null>(null);
   const [isPriceChangeOpen, setIsPriceChangeOpen] = React.useState(false);
   const [isProductCreateOpen, setIsProductCreateOpen] = React.useState(false);
+  const [cashMovementType, setCashMovementType] = React.useState<'INCOME' | 'WITHDRAWAL'>('INCOME');
+  const [isCashMovementOpen, setIsCashMovementOpen] = React.useState(false);
   const [priceChangeCode, setPriceChangeCode] = React.useState('');
   const [priceChangeProduct, setPriceChangeProduct] = React.useState<Product | null>(null);
   const [newPrice, setNewPrice] = React.useState('');
@@ -322,6 +336,7 @@ export const POSView: React.FC = () => {
 
   const totalPaid = payments.reduce((acc, p) => acc + p.amount, 0);
   const changeDue = Math.max(0, totalPaid - grandTotal);
+  const lastInvoice = sales.find((sale) => sale.status === 'COMPLETED' && sale.notes?.includes('CAE'));
 
   const openDiscountDialog = (target: 'GLOBAL' | string) => {
     const item = target === 'GLOBAL' ? null : cart.find((cartItem) => cartItem.product.id === target);
@@ -335,6 +350,28 @@ export const POSView: React.FC = () => {
     if (discountTarget === 'GLOBAL') setDiscountGlobal(discount);
     else updateItemDiscount(discountTarget, discount);
     setDiscountTarget(null);
+  };
+
+  const openCashMovement = (type: 'INCOME' | 'WITHDRAWAL') => {
+    if (!cashSession || !user) {
+      addNotification({ title: 'Caja cerrada', message: 'Abrí una sesión de caja antes de registrar movimientos.', type: 'warning' });
+      return;
+    }
+    setCashMovementType(type);
+    setIsCashMovementOpen(true);
+  };
+
+  const createCashMovementFromPos = (amount: number, reason: string) => {
+    if (!cashSession || !user) return;
+    createCashMovement.mutate({
+      cashSessionId: cashSession.id,
+      type: cashMovementType,
+      amount,
+      reason,
+      userId: user.id,
+      userName: user.fullName,
+      createdAt: new Date().toISOString(),
+    }, { onSuccess: () => setIsCashMovementOpen(false) });
   };
 
   return (
@@ -790,6 +827,18 @@ export const POSView: React.FC = () => {
       </Paper>
 
       <Box sx={{ display: 'flex', gap: 0.75, p: 0.75, bgcolor: '#ECECEC', borderTop: '1px solid #FFFFFF' }}>
+        <Button fullWidth size="large" variant="contained" onClick={() => lastInvoice && setLastCompletedSale(lastInvoice)} disabled={!lastInvoice} startIcon={<Printer size={20} />} sx={{ py: 1, borderRadius: 0.5, fontWeight: 800, fontSize: '1rem', minHeight: 42 }}>
+          Última factura
+        </Button>
+        <Button fullWidth size="large" variant="outlined" onClick={() => openTab({ id: 'billing', title: 'Facturación', iconName: 'Receipt', route: '/billing', closable: true })} startIcon={<Receipt size={20} />} sx={{ py: 1, borderRadius: 0.5, fontWeight: 800, fontSize: '1rem', minHeight: 42 }}>
+          Ver facturación
+        </Button>
+        <Button fullWidth size="large" variant="outlined" color="success" onClick={() => openCashMovement('INCOME')} startIcon={<ArrowDownCircle size={20} />} sx={{ py: 1, borderRadius: 0.5, fontWeight: 800, fontSize: '1rem', minHeight: 42 }}>
+          Ingresar dinero
+        </Button>
+        <Button fullWidth size="large" variant="outlined" color="warning" onClick={() => openCashMovement('WITHDRAWAL')} startIcon={<ArrowUpCircle size={20} />} sx={{ py: 1, borderRadius: 0.5, fontWeight: 800, fontSize: '1rem', minHeight: 42 }}>
+          Retirar dinero
+        </Button>
         <Button
           fullWidth
           size="large"
@@ -961,6 +1010,7 @@ export const POSView: React.FC = () => {
       <POSTicketPrintModal sale={lastCompletedSale} onClose={() => setLastCompletedSale(null)} />
       <ProductNotFoundAlert code={missingProductCode} onClose={() => setMissingProductCode(null)} />
       <POSStockEntryModal open={isStockEntryOpen} onClose={() => { setIsStockEntryOpen(false); setStockEntryProduct(null); }} products={products} initialProduct={stockEntryProduct} />
+      <CashMovementModal open={isCashMovementOpen} type={cashMovementType} onClose={() => setIsCashMovementOpen(false)} onConfirm={createCashMovementFromPos} isPending={createCashMovement.isPending} />
       <ProductDrawerEditor product={null} open={isProductCreateOpen} onClose={() => { setIsProductCreateOpen(false); focusSearchInput(); }} />
 
       <Dialog open={isPriceChangeOpen} onClose={() => setIsPriceChangeOpen(false)} maxWidth="xs" fullWidth>

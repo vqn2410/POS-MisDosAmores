@@ -10,42 +10,26 @@ import {
   TableCell,
   TableBody,
   Chip,
-  Grid,
-  Select,
-  MenuItem,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
   CircularProgress,
 } from '@mui/material';
-import { Download, CheckCircle2, Sliders, Receipt, XCircle } from 'lucide-react';
-import { FiscalRulesEngine, type ReceiptType } from './services/FiscalRulesEngine';
+import { Download, CheckCircle2, Receipt, XCircle, Printer } from 'lucide-react';
 import { useSales, useUpdateSale } from '../../hooks/useSales';
 import { useUpdateProduct } from '../../hooks/useProducts';
-
-const METHOD_LABELS: Record<string, string> = {
-  CASH: 'Efectivo',
-  TRANSFER: 'Transferencia Bancaria',
-  CREDIT: 'Crédito / Cuenta Corriente',
-  MERCADOPAGO_QR: 'QR Mercado Pago',
-  MERCADOPAGO_CARD: 'Tarjeta Mercado Pago',
-  CARD: 'Otras Tarjetas',
-};
+import { POSTicketPrintModal } from '../pos/components/POSTicketPrintModal';
+import type { Sale } from '../../types';
 
 export const BillingView: React.FC = () => {
-  const [rules, setRules] = React.useState(FiscalRulesEngine.getRules());
   const { data: sales = [] } = useSales();
-
-  const handleRuleChange = (paymentMethod: string, newType: ReceiptType) => {
-    FiscalRulesEngine.setRule(paymentMethod, newType);
-    setRules(FiscalRulesEngine.getRules());
-  };
 
   const updateSale = useUpdateSale();
   const updateProduct = useUpdateProduct();
 
   const [cancelTargetId, setCancelTargetId] = React.useState<string | null>(null);
+  const [printSale, setPrintSale] = React.useState<Sale | null>(null);
 
   const statusLabel = (s: typeof sales[0]): string => {
     if (s.status === 'COMPLETED') return 'EMITIDO';
@@ -107,10 +91,10 @@ export const BillingView: React.FC = () => {
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Box>
           <Typography variant="h4" sx={{ fontWeight: 900, color: '#0F172A' }}>
-            🧾 Facturación Electrónica ARCA & Reglas Fiscales
+           🧾 Comprobantes Emitidos
           </Typography>
           <Typography variant="body1" color="text.secondary">
-            Capa de Abstracción para PACs, ARCA (AFIP) y Motor de Reglas Fiscales por Medio de Pago
+           Consulta, impresión y anulación de comprobantes emitidos.
           </Typography>
         </Box>
         <Chip
@@ -120,44 +104,6 @@ export const BillingView: React.FC = () => {
           sx={{ fontWeight: 800, fontSize: '0.95rem', py: 2.5, px: 1, borderRadius: 3 }}
         />
       </Box>
-
-      <Paper elevation={1} sx={{ p: 3.5, mb: 4, borderRadius: 4, border: '2px solid', borderColor: '#E2E8F0', bgcolor: '#FFFFFF' }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2 }}>
-          <Sliders size={26} color="#2563EB" />
-          <Typography variant="h5" sx={{ fontWeight: 900, color: '#0F172A' }}>
-            Configuración del Motor de Reglas Fiscales (ARCA vs Interno)
-          </Typography>
-        </Box>
-        <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
-          Define qué medios de pago emiten comprobantes fiscales timbrados por ARCA (con CAE) y cuáles generan únicamente comprobante interno.
-        </Typography>
-
-        <Grid container spacing={2.5}>
-          {Object.entries(rules).map(([method, receiptType]) => (
-            <Grid size={{ xs: 12, sm: 6, md: 4 }} key={method}>
-              <Paper elevation={0} sx={{ p: 2.5, borderRadius: 3, bgcolor: '#F8FAFC', border: '1px solid #E2E8F0' }}>
-                <Typography variant="subtitle1" sx={{ fontWeight: 800, mb: 1, color: '#0F172A' }}>
-                  {METHOD_LABELS[method] || method}
-                </Typography>
-                <Select
-                  fullWidth
-                  size="small"
-                  value={receiptType}
-                  onChange={(e) => handleRuleChange(method, e.target.value as ReceiptType)}
-                  sx={{ borderRadius: 2.5, bgcolor: '#FFFFFF', fontWeight: 800, fontSize: '1rem', height: 48 }}
-                >
-                  <MenuItem value="INTERNAL_RECEIPT" sx={{ fontWeight: 700, fontSize: '1rem' }}>
-                    🧾 Comprobante Interno
-                  </MenuItem>
-                  <MenuItem value="FISCAL_INVOICE" sx={{ fontWeight: 700, fontSize: '1rem' }}>
-                    📄 Factura Fiscal (ARCA)
-                  </MenuItem>
-                </Select>
-              </Paper>
-            </Grid>
-          ))}
-        </Grid>
-      </Paper>
 
       <Typography variant="h5" sx={{ fontWeight: 900, mb: 2, display: 'flex', alignItems: 'center', gap: 1, color: '#0F172A' }}>
         <Receipt size={26} color="#16A34A" /> Historial de Comprobantes Emitidos
@@ -211,6 +157,18 @@ export const BillingView: React.FC = () => {
                   </TableCell>
                   <TableCell align="right">
                     <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        startIcon={<Printer size={16} />}
+                        onClick={() => {
+                          const sale = sales.find((item) => item.id === c.id);
+                          if (sale) setPrintSale(sale);
+                        }}
+                        sx={{ borderRadius: 2.5, fontWeight: 800, minHeight: 36 }}
+                      >
+                        Imprimir
+                      </Button>
                       {c.rawStatus === 'COMPLETED' && (
                         <Button
                           size="small"
@@ -260,6 +218,7 @@ export const BillingView: React.FC = () => {
           </Button>
         </DialogActions>
       </Dialog>
+      <POSTicketPrintModal sale={printSale} onClose={() => setPrintSale(null)} />
     </>
   );
 };
