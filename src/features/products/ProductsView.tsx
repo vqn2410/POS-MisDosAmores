@@ -66,6 +66,7 @@ export const ProductsView: React.FC = () => {
   const [categoryName, setCategoryName] = React.useState('');
   const [categoryDescription, setCategoryDescription] = React.useState('');
   const [isConfiguringFiambres, setIsConfiguringFiambres] = React.useState(false);
+  const [isConfiguringCigarettes, setIsConfiguringCigarettes] = React.useState(false);
 
   const filteredProducts = products.filter(
       (p) =>
@@ -140,6 +141,34 @@ export const ProductsView: React.FC = () => {
     }
   };
 
+  const handleConfigureCigarettes = async () => {
+    setIsConfiguringCigarettes(true);
+    try {
+      let cigaretteCategory = categories.find((category) => category.name.toLowerCase() === 'cigarrillo');
+      if (!cigaretteCategory) {
+        const id = await createCategory.mutateAsync({ name: 'Cigarrillo', description: 'Productos de cigarrillos' });
+        cigaretteCategory = { id, name: 'Cigarrillo' };
+      }
+
+      const matches = products.filter((product) => normalizeFiambreValue(product.name || '').startsWith('cigarrillo'));
+      if (matches.length === 0) {
+        addNotification({ title: 'No se encontraron productos', message: 'No hay productos cuyo nombre comience con "Cigarrillo".', type: 'warning' });
+        return;
+      }
+
+      await fs.updateMany<Product>('products', matches.map((product) => ({
+        id: product.id,
+        data: { categoryId: cigaretteCategory.id, categoryName: 'Cigarrillo' },
+      })));
+      await refetchProducts();
+      addNotification({ title: 'Cigarrillos actualizados', message: `${matches.length} productos fueron asignados a la categoría Cigarrillo.`, type: 'success' });
+    } catch {
+      addNotification({ title: 'Error', message: 'No se pudieron actualizar los productos de cigarrillo.', type: 'error' });
+    } finally {
+      setIsConfiguringCigarettes(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <Box sx={{ p: 3, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
@@ -166,6 +195,9 @@ export const ProductsView: React.FC = () => {
           </Button>
           <Button variant="outlined" color="secondary" startIcon={<Scale size={20} />} onClick={() => void handleConfigureFiambres()} disabled={isConfiguringFiambres} sx={{ borderRadius: 3, fontWeight: 800, minHeight: 48, px: 2.5 }}>
             {isConfiguringFiambres ? 'Actualizando...' : 'Configurar fiambres'}
+          </Button>
+          <Button variant="outlined" color="warning" startIcon={<PackagePlus size={20} />} onClick={() => void handleConfigureCigarettes()} disabled={isConfiguringCigarettes} sx={{ borderRadius: 3, fontWeight: 800, minHeight: 48, px: 2.5 }}>
+            {isConfiguringCigarettes ? 'Actualizando...' : 'Configurar cigarrillos'}
           </Button>
           <Button variant="contained" color="success" startIcon={<PackagePlus size={20} />} onClick={() => { setStockProduct(null); setIsStockDialogOpen(true); }} sx={{ borderRadius: 3, fontWeight: 800, minHeight: 48, px: 2.5 }}>
             Agregar stock
