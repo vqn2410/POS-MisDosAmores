@@ -59,6 +59,7 @@ import { CashMovementModal } from '../cash/components/CashMovementModal';
 import { useCurrentCashSession, useCreateCashMovement } from '../../hooks/useCashSessions';
 import { useSales } from '../../hooks/useSales';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
+import { logoutFirebase } from '../auth/services/firebaseAuthService';
 
 
 export const POSView: React.FC = () => {
@@ -85,7 +86,7 @@ export const POSView: React.FC = () => {
   const { data: products = [] } = useProducts();
   const updateProduct = useUpdateProduct();
   const { data: customers = [] } = useCustomers();
-  const { user } = useAuthStore();
+  const { user, logout } = useAuthStore();
   const { data: cashSession } = useCurrentCashSession();
   const createCashMovement = useCreateCashMovement();
   const { data: sales = [] } = useSales();
@@ -430,6 +431,11 @@ export const POSView: React.FC = () => {
     }
     setCashMovementType(type);
     setIsCashMovementOpen(true);
+  };
+
+  const changeUser = async () => {
+    await logoutFirebase();
+    logout();
   };
 
   const createCashMovementFromPos = (amount: number, reason: string) => {
@@ -903,6 +909,9 @@ export const POSView: React.FC = () => {
       </Paper>
 
       <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 0.75, p: 0.75, bgcolor: '#ECECEC', borderTop: '1px solid #FFFFFF' }}>
+        <Button fullWidth size="large" variant="outlined" onClick={() => void changeUser()} startIcon={<UserCheck size={20} />} sx={{ py: 1, borderRadius: 0.5, fontWeight: 800, fontSize: '1rem', minHeight: 42 }}>
+          Cambiar usuario
+        </Button>
         <Button fullWidth size="large" variant="contained" onClick={() => lastInvoice && setLastCompletedSale(lastInvoice)} disabled={!lastInvoice} startIcon={<Printer size={20} />} sx={{ py: 1, borderRadius: 0.5, fontWeight: 800, fontSize: '1rem', minHeight: 42 }}>
           Última factura
         </Button>
