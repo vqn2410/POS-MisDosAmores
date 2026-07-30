@@ -173,6 +173,14 @@ export const POSView: React.FC = () => {
         return;
       }
 
+      if (trimmed.toLowerCase() === 'b') {
+        setSearchTerm('');
+        setProductSearchTerm('');
+        setSelectedSearchProduct(null);
+        setIsProductSearchOpen(true);
+        return;
+      }
+
       // 1. PRIORITY 1: Detect fast expression "CANTIDAD * PRECIO" (e.g. 2*2000, 2 * 2000, 2,5*2000)
       const quickResult = parseQuickVariableProduct(trimmed);
       if (quickResult.isValid) {
