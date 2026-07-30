@@ -9,6 +9,8 @@ export function useProducts() {
   return useQuery({
     queryKey: ['products'],
     queryFn: () => fs.getAllOrdered<Product>(COL, 'updatedAt'),
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
   });
 }
 
