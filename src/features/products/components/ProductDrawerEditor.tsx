@@ -17,7 +17,7 @@ import { X as CloseIcon, Save, Image as ImageIcon, Tag, DollarSign, Package, Tru
 import type { Product, SaleType, CashBoxType } from '../../../types';
 import { useCategories } from '../../../hooks/useCategories';
 import { useSuppliers } from '../../../hooks/useSuppliers';
-import { useCreateProduct, useUpdateProduct } from '../../../hooks/useProducts';
+import { useCreateProduct, useUpdateProduct, useProducts } from '../../../hooks/useProducts';
 import { ProductImage } from '../../../components/common/ProductImage';
 
 interface ProductDrawerEditorProps {
@@ -58,13 +58,16 @@ export const ProductDrawerEditor: React.FC<ProductDrawerEditorProps> = ({ produc
   const { data: suppliers = [] } = useSuppliers();
   const createProduct = useCreateProduct();
   const updateProduct = useUpdateProduct();
+  const { data: products = [] } = useProducts();
 
   // Form State - Empty defaults when creating a new product
   const [formData, setFormData] = React.useState<Partial<Product>>({});
   const [formError, setFormError] = React.useState('');
+  const duplicateCodeRef = React.useRef('');
 
   React.useEffect(() => {
     setFormError('');
+    duplicateCodeRef.current = '';
     if (product) {
       setFormData(product);
     } else {
@@ -91,7 +94,31 @@ export const ProductDrawerEditor: React.FC<ProductDrawerEditorProps> = ({ produc
   }, [product, open]);
 
   const handleChange = (field: keyof Product, value: any) => {
-    if (field === 'barcode') setFormError('');
+    if (field === 'barcode') {
+      const code = String(value).trim().toLowerCase();
+      const existingProduct = products.find((item) => item.id !== product?.id && (item.barcode.trim().toLowerCase() === code || item.sku.trim().toLowerCase() === code));
+      if (code && existingProduct) {
+        setFormError(`Producto existente: ${existingProduct.name}.`);
+        if (duplicateCodeRef.current !== code) {
+          duplicateCodeRef.current = code;
+          try {
+            const audio = new AudioContext();
+            const oscillator = audio.createOscillator();
+            const gain = audio.createGain();
+            oscillator.type = 'square';
+            oscillator.frequency.value = 180;
+            gain.gain.value = 0.08;
+            oscillator.connect(gain);
+            gain.connect(audio.destination);
+            oscillator.start();
+            oscillator.stop(audio.currentTime + 0.15);
+          } catch {}
+        }
+      } else {
+        duplicateCodeRef.current = '';
+        setFormError('');
+      }
+    }
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
@@ -101,6 +128,11 @@ export const ProductDrawerEditor: React.FC<ProductDrawerEditorProps> = ({ produc
     const barcode = formData.barcode?.trim() || '';
     if (!barcode) {
       setFormError('El código de barras es obligatorio. Se utilizará también como SKU.');
+      return;
+    }
+    const existingProduct = products.find((item) => item.id !== product?.id && (item.barcode.trim().toLowerCase() === barcode.toLowerCase() || item.sku.trim().toLowerCase() === barcode.toLowerCase()));
+    if (existingProduct) {
+      setFormError(`Producto existente: ${existingProduct.name}.`);
       return;
     }
 
@@ -188,6 +220,8 @@ export const ProductDrawerEditor: React.FC<ProductDrawerEditorProps> = ({ produc
                 placeholder="Ej. 7791234567890"
                 value={formData.barcode || ''}
                 onChange={(e) => handleChange('barcode', e.target.value)}
+                error={formError.startsWith('Producto existente:')}
+                helperText={formError.startsWith('Producto existente:') ? formError : ''}
                 slotProps={{ input: inputSlotProps, inputLabel: labelSlotProps }}
               />
             </Grid>
