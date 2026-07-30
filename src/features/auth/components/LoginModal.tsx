@@ -8,13 +8,15 @@ import {
   InputLabel,
   Select,
   MenuItem,
+  TextField,
+  InputAdornment,
   Button,
   Box,
   Typography,
   Alert,
   CircularProgress,
 } from '@mui/material';
-import { User as UserIcon, ShieldCheck } from 'lucide-react';
+import { User as UserIcon, Lock, ShieldCheck } from 'lucide-react';
 import { loginWithUsername } from '../services/firebaseAuthService';
 import { useAuthStore } from '../../../store/useAuthStore';
 import { useUsers } from '../../../hooks/useUsers';
@@ -26,17 +28,19 @@ interface LoginModalProps {
 
 export const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
   const [username, setUsername] = React.useState('');
+  const [password, setPassword] = React.useState('');
   const [loading, setLoading] = React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
 
   const { setUser } = useAuthStore();
   const { data: users = [] } = useUsers();
   const activeUsers = users.filter((user) => user.isActive !== false);
+  const passwordRef = React.useRef<HTMLInputElement>(null);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!username.trim()) {
-      setErrorMessage('Seleccioná un usuario para ingresar.');
+    if (!username.trim() || !password) {
+      setErrorMessage('Seleccioná un usuario e ingresá su clave de acceso.');
       return;
     }
 
@@ -44,7 +48,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
     setErrorMessage(null);
 
     try {
-      const authenticatedUser = await loginWithUsername(username);
+      const authenticatedUser = await loginWithUsername(username, password);
       setUser(authenticatedUser);
       setLoading(false);
       onClose();
@@ -95,7 +99,12 @@ export const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
               labelId="pos-user-label"
               label="Usuario"
               value={username}
-              onChange={(event) => setUsername(event.target.value)}
+              onChange={(event) => {
+                setUsername(event.target.value);
+                setPassword('');
+                setErrorMessage(null);
+                setTimeout(() => passwordRef.current?.focus(), 50);
+              }}
               disabled={loading}
               startAdornment={<UserIcon size={18} style={{ marginLeft: 12, marginRight: 8 }} />}
               sx={{ borderRadius: 2.5 }}
@@ -112,12 +121,31 @@ export const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
             <Alert severity="warning">No hay usuarios activos disponibles.</Alert>
           )}
 
+          {username && (
+            <TextField
+              inputRef={passwordRef}
+              autoFocus
+              fullWidth
+              label="Clave de acceso"
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              disabled={loading}
+              slotProps={{
+                input: {
+                  startAdornment: <InputAdornment position="start"><Lock size={18} /></InputAdornment>,
+                  sx: { borderRadius: 2.5 },
+                },
+              }}
+            />
+          )}
+
           <Button
             type="submit"
             variant="contained"
             color="primary"
             size="large"
-            disabled={loading || !username}
+            disabled={loading || !username || !password}
             sx={{ py: 1.5, mt: 1, borderRadius: 3, fontWeight: 800, fontSize: '1rem' }}
           >
             {loading ? <CircularProgress size={24} color="inherit" /> : 'INICIAR SESIÓN'}

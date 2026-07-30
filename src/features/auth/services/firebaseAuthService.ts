@@ -1,4 +1,5 @@
 import {
+  signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut as firebaseSignOut,
   onAuthStateChanged,
@@ -68,9 +69,9 @@ export async function createFirebaseUser(
 }
 
 /**
- * Opens a POS workstation session using an existing active user.
+ * Authenticates an existing active POS user after it is selected from the terminal list.
  */
-export async function loginWithUsername(username: string): Promise<User> {
+export async function loginWithUsername(username: string, password: string): Promise<User> {
   const userDoc = await getUserDocByUsername(username);
 
   if (!userDoc) {
@@ -79,6 +80,9 @@ export async function loginWithUsername(username: string): Promise<User> {
   if (userDoc.isActive === false) {
     throw new Error('El usuario se encuentra inactivo. Acceso denegado.');
   }
+
+  const email = userDoc.email || emailFromUsername(username);
+  const credential = await signInWithEmailAndPassword(auth, email, password);
 
   try {
     await updateDoc(doc(db, 'users', userDoc.id), {
@@ -89,7 +93,7 @@ export async function loginWithUsername(username: string): Promise<User> {
     console.warn('No se pudo actualizar lastLogin en Firestore:', err);
   }
 
-  return userDoc;
+  return { ...userDoc, id: credential.user.uid };
 }
 
 /**
