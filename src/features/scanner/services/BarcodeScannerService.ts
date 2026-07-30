@@ -9,6 +9,7 @@ export class BarcodeScannerService {
   private facingMode: 'environment' | 'user' = 'environment';
   private lastDetectedCode: string | null = null;
   private lastDetectedTimestamp = 0;
+  private scannerControls: { stop: () => void } | null = null;
   private readonly debounceMs = 1000;
 
   public async requestPermission(): Promise<boolean> {
@@ -42,8 +43,7 @@ export class BarcodeScannerService {
       await videoElement.play();
       this.isScanning = true;
 
-      // Start frame scanning loop
-      this.scanLoop(videoElement, callbacks);
+      void this.startDecoding(videoElement, callbacks);
     } catch (err) {
       const error = err instanceof Error ? err : new Error('Unable to access camera stream');
       if (callbacks.onError) callbacks.onError(error);
@@ -52,6 +52,8 @@ export class BarcodeScannerService {
 
   public stopScanner(): void {
     this.isScanning = false;
+    this.scannerControls?.stop();
+    this.scannerControls = null;
     if (this.mediaStream) {
       this.mediaStream.getTracks().forEach((track) => track.stop());
       this.mediaStream = null;
@@ -92,41 +94,19 @@ export class BarcodeScannerService {
     return false;
   }
 
-  private scanLoop(videoElement: HTMLVideoElement, callbacks: ScannerCallbacks): void {
-    if (!this.isScanning) return;
-
-    // Check BarcodeDetector API if available natively in browser
-    if ('BarcodeDetector' in window) {
-      const BarcodeDetectorClass = (window as any).BarcodeDetector;
-      const detector = new BarcodeDetectorClass({
-        formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'qr_code'],
+  private async startDecoding(videoElement: HTMLVideoElement, callbacks: ScannerCallbacks): Promise<void> {
+    if (!this.mediaStream) return;
+    try {
+      const reader = new BrowserMultiFormatReader();
+      this.scannerControls = await reader.decodeFromStream(this.mediaStream, videoElement, (result) => {
+        if (!result || !this.isScanning) return;
+        const code = result.getText();
+        if (!this.isDebounced(code)) callbacks.onDetected(code);
       });
-
-      const detectFrame = async () => {
-        if (!this.isScanning) return;
-        try {
-          const barcodes = await detector.detect(videoElement);
-          if (barcodes.length > 0) {
-            const code = barcodes[0].rawValue;
-            if (!this.isDebounced(code)) {
-              callbacks.onDetected(code);
-            }
-          }
-        } catch {
-          // Ignore detection frame errors
-        }
-        if (this.isScanning) {
-          requestAnimationFrame(detectFrame);
-        }
-      };
-      requestAnimationFrame(detectFrame);
-    } else {
-      // Fallback tick for browsers without native BarcodeDetector API
-      const tick = () => {
-        if (!this.isScanning) return;
-        requestAnimationFrame(tick);
-      };
-      requestAnimationFrame(tick);
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error('No se pudo leer el código con la cámara.');
+      callbacks.onError?.(error);
     }
   }
 }
+import { BrowserMultiFormatReader } from '@zxing/browser';
