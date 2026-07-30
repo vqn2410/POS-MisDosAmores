@@ -71,15 +71,15 @@ export const POSTicketPrintModal: React.FC<POSTicketPrintModalProps> = ({ sale, 
             position: fixed;
             left: 0;
             top: 0;
-            width: 48mm !important;
-            min-width: 48mm !important;
+            width: 54mm !important;
+            min-width: 54mm !important;
             margin: 0 !important;
-            padding: 2mm !important;
+            padding: 1mm !important;
             border: 0 !important;
             border-radius: 0 !important;
             box-shadow: none !important;
             font-family: "Courier New", monospace !important;
-            font-size: 9px !important;
+            font-size: 10px !important;
             line-height: 1.25 !important;
           }
         }
