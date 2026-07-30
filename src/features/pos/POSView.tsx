@@ -92,6 +92,7 @@ export const POSView: React.FC = () => {
   const [selectedSearchProduct, setSelectedSearchProduct] = React.useState<Product | null>(null);
 
   const searchInputRef = React.useRef<HTMLInputElement>(null);
+  const ticketScrollRef = React.useRef<HTMLDivElement>(null);
 
   const focusSearchInput = React.useCallback(() => {
     setTimeout(() => {
@@ -104,6 +105,10 @@ export const POSView: React.FC = () => {
   React.useEffect(() => {
     focusSearchInput();
   }, [focusSearchInput]);
+
+  React.useEffect(() => {
+    ticketScrollRef.current?.scrollTo({ top: ticketScrollRef.current.scrollHeight, behavior: 'smooth' });
+  }, [cart]);
 
   // Keep focus on the scanner input after any click outside inputs
   React.useEffect(() => {
@@ -497,7 +502,7 @@ export const POSView: React.FC = () => {
         </Box>
 
         {/* Scrollable Ticket Table */}
-        <Box sx={{ flexGrow: 1, overflowY: 'auto' }}>
+        <Box ref={ticketScrollRef} sx={{ flexGrow: 1, overflowY: 'auto' }}>
           <Table stickyHeader sx={{ minWidth: 650 }}>
             <TableHead>
               <TableRow sx={{ '& th': { bgcolor: '#E6E5D7', color: '#1C1C1C', fontWeight: 800, fontSize: '0.78rem', borderBottom: '1px solid #AFAFAF', py: 0.4 } }}>

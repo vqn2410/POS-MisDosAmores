@@ -61,6 +61,7 @@ export const MobilePOSView: React.FC<MobilePOSViewProps> = ({ onOpenScanner }) =
   const [missingProductCode, setMissingProductCode] = React.useState<string | null>(null);
 
   const searchInputRef = React.useRef<HTMLInputElement>(null);
+  const ticketScrollRef = React.useRef<HTMLDivElement>(null);
 
   const grandTotal = cart.reduce((acc, item) => acc + item.total, 0);
   const totalItemCount = cart.reduce((acc, item) => acc + (item.saleType === 'WEIGHT' ? 1 : item.quantity), 0);
@@ -72,6 +73,10 @@ export const MobilePOSView: React.FC<MobilePOSViewProps> = ({ onOpenScanner }) =
       }
     }, 50);
   }, []);
+
+  React.useEffect(() => {
+    ticketScrollRef.current?.scrollTo({ top: ticketScrollRef.current.scrollHeight, behavior: 'smooth' });
+  }, [cart]);
 
   const handleSearchSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -186,7 +191,7 @@ export const MobilePOSView: React.FC<MobilePOSViewProps> = ({ onOpenScanner }) =
       </Box>
 
       {/* 3. Full-width Mobile Ticket List */}
-      <Box sx={{ flexGrow: 1, overflowY: 'auto', p: 2, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+      <Box ref={ticketScrollRef} sx={{ flexGrow: 1, overflowY: 'auto', p: 2, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
           <Typography variant="subtitle1" sx={{ fontWeight: 900, color: '#0F172A', display: 'flex', alignItems: 'center', gap: 1 }}>
             <ShoppingBag size={20} color="#2563EB" /> Ticket Móvil
