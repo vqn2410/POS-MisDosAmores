@@ -31,11 +31,17 @@ function voucherLabel(voucherType: number): string {
 }
 
 function taxConditionLabel(raw: string | null | undefined): string {
-  const value = (raw || '').toUpperCase();
-  if (value.includes('MONOTRIBUTO')) return 'Responsable Monotributo';
-  if (value.includes('EXENTO')) return 'Exento';
-  if (value.includes('RESPONSABLE')) return 'Responsable Inscripto';
-  return raw || 'Exento';
+  const value = (raw || '').toUpperCase().replace(/[\s_]/g, '');
+  if (value.includes('MONOTRIBUTO')) return 'RESP. MONOTRIBUTISTA';
+  if (value.includes('EXENTO')) return 'EXENTO';
+  if (value.includes('RESPONSABLE')) return 'RESP. INSCRIPTO';
+  return 'RESP. MONOTRIBUTISTA';
+}
+
+function formatCuit(raw: string | null | undefined): string {
+  const digits = String(raw || '').replace(/\D/g, '');
+  if (digits.length === 11) return `${digits.slice(0, 2)}-${digits.slice(2, 10)}-${digits.slice(10)}`;
+  return String(raw || '');
 }
 
 function formatDate(value: string | undefined): string {
@@ -194,30 +200,26 @@ export const POSTicketPrintModal: React.FC<POSTicketPrintModalProps> = ({ sale, 
               Titular: {company.ownerName}
             </Typography>
           )}
+          <Typography className="ticket-tax-id" variant="caption" align="center" sx={{ display: 'block' }}>
+            CUIT: {formatCuit(cuit)}
+          </Typography>
           {company?.address && (
             <Typography className="ticket-address" variant="caption" align="center" sx={{ display: 'block' }}>
               {company.address}
             </Typography>
           )}
-          <Typography className="ticket-tax-id" variant="caption" align="center" sx={{ display: 'block' }}>
-            CUIT: {cuit}
-          </Typography>
           {company?.phone && (
             <Typography className="ticket-phone" variant="caption" align="center" sx={{ display: 'block' }}>
-              Tel: {company.phone}
+              TEL: {company.phone}
             </Typography>
           )}
-          {isFiscal && (
-            <>
-              <Typography className="ticket-detail" variant="caption" align="center" sx={{ display: 'block' }}>
-                Cond. frente al IVA: {taxCondition}
-              </Typography>
-              {isMonotributo && (
-                <Typography className="ticket-detail" variant="caption" align="center" sx={{ display: 'block' }}>
-                  Ingresos Brutos: {cuit}
-                </Typography>
-              )}
-            </>
+          <Typography className="ticket-detail" variant="caption" align="center" sx={{ display: 'block' }}>
+            CON. IVA: {taxCondition}
+          </Typography>
+          {isFiscal && isMonotributo && (
+            <Typography className="ticket-detail" variant="caption" align="center" sx={{ display: 'block' }}>
+              Ingresos Brutos: {formatCuit(cuit)}
+            </Typography>
           )}
           <Divider className="ticket-divider" sx={{ borderStyle: 'dashed', my: 1 }} />
 
