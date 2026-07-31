@@ -21,7 +21,8 @@ export function loadArcaConfig() {
   const emitterAddress = String(process.env.ARCA_EMITTER_ADDRESS || '').trim();
   const emitterTaxCondition = String(process.env.ARCA_EMITTER_TAX_CONDITION || 'IVA_SUJETO_EXENTO').trim();
 
-  const stub = !cuit || !certificatePath || !privateKeyPath;
+  const hasPemFromEnv = Boolean(process.env.ARCA_CERT_PEM && process.env.ARCA_PRIVATE_KEY_PEM);
+  const stub = !cuit || (!certificatePath && !hasPemFromEnv) || (!privateKeyPath && !hasPemFromEnv);
 
   return {
     cuit,
