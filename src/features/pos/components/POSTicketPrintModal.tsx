@@ -2,7 +2,7 @@ import React from 'react';
 import { Dialog, DialogTitle, DialogContent, DialogActions, Button, Box, Typography, Divider } from '@mui/material';
 import { Printer, CheckCircle } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
-import type { Sale } from '../../../types';
+import type { Sale, FiscalInvoice } from '../../../types';
 import { useCompany } from '../../../hooks/useCompany';
 import { getArcaConfig, type ArcaConfig } from '../../../services/arcaApi';
 
@@ -57,6 +57,14 @@ function formatCaeExpiration(value: string | undefined): string {
   const digits = value.replace(/\D/g, '');
   if (digits.length === 8) return `${digits.slice(6, 8)}/${digits.slice(4, 6)}/${digits.slice(0, 4)}`;
   return value;
+}
+
+function parseFiscalFromNotes(notes: string | undefined): Partial<FiscalInvoice> | null {
+  if (!notes) return null;
+  const cae = notes.match(/CAE:\s*(\S+)/)?.[1];
+  const voucherNumber = Number(notes.match(/Factura ARCA #(\d+)/)?.[1] || 0);
+  if (!cae) return null;
+  return { cae, voucherNumber };
 }
 
 function buildFiscalQrData(sale: Sale, cuit: string | null | undefined): string | null {
@@ -115,12 +123,13 @@ export const POSTicketPrintModal: React.FC<POSTicketPrintModalProps> = ({ sale, 
   const cuit = arcaConfig?.cuit || company?.taxId || '';
   const taxCondition = taxConditionLabel(arcaConfig?.emitter?.taxCondition);
   const isMonotributo = taxCondition.toLowerCase().includes('monotributo');
-  const voucherType = sale.fiscalInvoice?.voucherType;
-  const voucherNumber = sale.fiscalInvoice?.voucherNumber;
-  const salesPoint = sale.fiscalInvoice?.salesPoint;
+  const fiscalData = sale.fiscalInvoice ?? parseFiscalFromNotes(sale.notes);
+  const voucherType = fiscalData?.voucherType;
+  const voucherNumber = fiscalData?.voucherNumber;
+  const salesPoint = fiscalData?.salesPoint ?? arcaConfig?.salesPoint;
   const formattedNumber = voucherNumber ? `${String(salesPoint || 1).padStart(4, '0')}-${String(voucherNumber).padStart(8, '0')}` : '';
-  const qrData = buildFiscalQrData(sale, cuit);
-  const destinatario = sale.fiscalInvoice?.docType === 99 || !sale.customerName ? 'A Consumidor Final' : sale.customerName;
+  const qrData = sale.fiscalInvoice ? buildFiscalQrData(sale, cuit) : null;
+  const destinatario = fiscalData?.docType === 99 || !sale.customerName ? 'A Consumidor Final' : sale.customerName;
 
   const ticketNote = (sale.notes || '')
     .replace(/Factura ARCA #\d+ emitida\. CAE: \S+/g, '')
@@ -235,7 +244,7 @@ export const POSTicketPrintModal: React.FC<POSTicketPrintModalProps> = ({ sale, 
                 </Typography>
               )}
               <Typography className="ticket-detail" variant="caption" sx={{ display: 'block' }}>
-                Fecha de emisión: {formatDate(sale.fiscalInvoice?.emittedAt || sale.createdAt)}
+                Fecha de emisión: {formatDate(fiscalData?.emittedAt || sale.createdAt)}
               </Typography>
               <Typography className="ticket-detail" variant="caption" sx={{ display: 'block' }}>
                 Destinatario: {destinatario}
@@ -307,10 +316,10 @@ export const POSTicketPrintModal: React.FC<POSTicketPrintModalProps> = ({ sale, 
           {isFiscal && (
             <>
               <Typography className="ticket-detail" variant="caption" sx={{ display: 'block', fontWeight: 700 }}>
-                CAE N°: {sale.fiscalInvoice?.cae || '—'}
+                CAE N°: {fiscalData?.cae || '—'}
               </Typography>
               <Typography className="ticket-detail" variant="caption" sx={{ display: 'block' }}>
-                Venc. CAE: {formatCaeExpiration(sale.fiscalInvoice?.caeExpiration) || '—'}
+                Venc. CAE: {formatCaeExpiration(fiscalData?.caeExpiration) || '—'}
               </Typography>
               {qrData && (
                 <Box sx={{ textAlign: 'center', my: 1.5 }}>
