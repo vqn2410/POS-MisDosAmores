@@ -12,7 +12,8 @@ const DEFAULT_TA_CACHE_DIR = path.join(path.dirname(fileURLToPath(import.meta.ur
 
 function formatAfipDate(date) {
   const pad = (n) => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}-03:00`;
+  const local = new Date(date.getTime() - 3 * 3600 * 1000);
+  return `${local.getUTCFullYear()}-${pad(local.getUTCMonth() + 1)}-${pad(local.getUTCDate())}T${pad(local.getUTCHours())}:${pad(local.getUTCMinutes())}:${pad(local.getUTCSeconds())}-03:00`;
 }
 
 function buildTraXml(service, cuit, generationTime, expirationTime) {

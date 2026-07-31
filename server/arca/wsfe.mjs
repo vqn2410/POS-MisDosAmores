@@ -12,9 +12,9 @@ function formatAmount(value) {
 }
 
 function todayAfip() {
-  const now = new Date();
+  const now = new Date(Date.now() - 3 * 3600 * 1000);
   const pad = (n) => String(n).padStart(2, '0');
-  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
+  return `${now.getUTCFullYear()}${pad(now.getUTCMonth() + 1)}${pad(now.getUTCDate())}`;
 }
 
 function soapEnvelope(method, bodyXml) {
