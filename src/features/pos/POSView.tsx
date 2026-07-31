@@ -423,7 +423,7 @@ export const POSView: React.FC<POSViewProps> = ({ onOpenScanner }) => {
 
   const totalPaid = payments.reduce((acc, p) => acc + p.amount, 0);
   const changeDue = Math.max(0, totalPaid - grandTotal);
-  const lastInvoice = sales.find((sale) => sale.status === 'COMPLETED' && sale.notes?.includes('CAE'));
+  const lastInvoice = [...sales].reverse().find((sale) => sale.status === 'COMPLETED' && sale.notes?.includes('CAE'));
 
   const openDiscountDialog = (target: 'GLOBAL' | string) => {
     const item = target === 'GLOBAL' ? null : cart.find((cartItem) => cartItem.product.id === target);

@@ -128,6 +128,19 @@ export interface SalePayment {
 
 export type SaleStatus = 'COMPLETED' | 'HOLD' | 'CANCELLED' | 'REFUNDED';
 
+export interface FiscalInvoice {
+  cae: string;
+  caeExpiration: string;
+  voucherType: number;
+  voucherNumber: number;
+  salesPoint: number;
+  emittedAt: string;
+  status: 'A' | 'R';
+  docType?: number;
+  docNumber?: string;
+  observations?: string[];
+}
+
 export interface CashMovement {
   id: string;
   cashSessionId: string;
@@ -157,6 +170,8 @@ export interface Sale {
   status: SaleStatus;
   payments: SalePayment[];
   notes?: string;
+  fiscalInvoice?: FiscalInvoice;
+  fiscalCreditNote?: FiscalInvoice;
   createdAt: string;
 }
 

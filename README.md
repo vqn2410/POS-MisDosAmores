@@ -30,3 +30,11 @@ If you are developing a production application, we recommend enabling type-aware
 ```
 
 See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+
+## Mercado Pago QR local
+
+1. Create `.env.mercadopago.local` from `.env.mercadopago.example` and set the test access token and registered QR POS external ID.
+2. Run `npm run dev:mp` in one terminal.
+3. Run `npm run dev` in another terminal.
+
+The local Mercado Pago server keeps the access token out of the browser. The POS generates a dynamic QR and confirms the payment only after Mercado Pago reports it as approved.

@@ -11,15 +11,21 @@ export interface TicketAccessData {
 }
 
 export interface InvoicePayload {
-  salesPoint: number;
-  voucherType: number; // 1: Factura A, 6: Factura B, 11: Factura C
+  salesPoint?: number; // El server usa el punto de venta configurado (.env ARCA_SALES_POINT).
+  voucherType?: number; // 1: Factura A, 6: Factura B, 11: Factura C. Si no se envía, el server lo deriva según la condición fiscal del emisor.
   concept: number; // 1: Productos, 2: Servicios, 3: Productos y Servicios
   docType: number; // 80: CUIT, 96: DNI, 99: Consumidor Final
   docNumber: string;
+  condicionIvaId?: number; // Condición frente al IVA del receptor (RG 5616). Default server: 5 (Consumidor Final).
   subtotal: number;
   taxTotal: number;
   grandTotal: number;
   date?: string; // YYYYMMDD
+  associatedInvoice?: {
+    voucherType: number;
+    salesPoint: number;
+    voucherNumber: number;
+  };
   items?: Array<{
     description: string;
     quantity: number;
@@ -63,11 +69,9 @@ export interface TaxpayerDetails {
 }
 
 export interface CreditNotePayload extends InvoicePayload {
-  associatedVoucherType: number;
-  associatedVoucherNumber: number;
+  voucherType: 3 | 13; // 3: NC A, 13: NC C
 }
 
 export interface DebitNotePayload extends InvoicePayload {
-  associatedVoucherType: number;
-  associatedVoucherNumber: number;
+  voucherType: 2 | 12; // 2: ND A, 12: ND C
 }

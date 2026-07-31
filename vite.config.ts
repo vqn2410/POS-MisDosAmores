@@ -7,5 +7,9 @@ export default defineConfig({
   plugins: [react(), basicSsl()],
   server: {
     host: '0.0.0.0',
+    proxy: {
+      '/api/mercadopago': 'http://localhost:3001',
+      '/api/arca': 'http://localhost:3001',
+    },
   },
 })

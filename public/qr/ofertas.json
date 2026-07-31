@@ -1,0 +1,23 @@
+{
+  "rotacionSegundos": 6,
+  "ofertas": [
+    {
+      "titulo": "Café con Leche",
+      "precio": 2000,
+      "precioAnterior": 2500,
+      "detalle": "Mediano 12 oz"
+    },
+    {
+      "titulo": "Chipa de 1/2 Kg",
+      "precio": 4500,
+      "precioAnterior": 5500,
+      "detalle": "Recién horneada"
+    },
+    {
+      "titulo": "Torta de Chocolate",
+      "precio": 3000,
+      "precioAnterior": 3800,
+      "detalle": "Porción grande"
+    }
+  ]
+}

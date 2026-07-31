@@ -12,6 +12,16 @@ dist
 dist-ssr
 *.local
 .env
+.env.*
+!.env.arca.example
+
+# Certificados ARCA/AFIP - nunca versionar
+server/arca/certs/
+server/arca/cache/
+*.crt
+*.key
+*.pem
+*.pfx
 
 # Editor directories and files
 .vscode/*

@@ -1,4 +1,4 @@
-import { ArcaClient } from '../../../arca/ArcaClient';
+import { createArcaInvoice } from '../../../services/arcaApi';
 import type { InvoicePayload, InvoiceResult } from '../../../arca/common/types';
 
 export type ReceiptType = 'INTERNAL_RECEIPT' | 'FISCAL_INVOICE';
@@ -7,19 +7,20 @@ export interface FacturationRuleConfig {
   [paymentMethod: string]: ReceiptType;
 }
 
-// Configurable default rules: QR and Card via Mercado Pago generate Fiscal Invoice (ARCA), others generate Internal Receipt
+// Only Mercado Pago, Cuenta DNI and card payments generate a Fiscal Invoice (ARCA).
+// Cash, transfer and client credit only generate an Internal Receipt.
 export const defaultFacturationRules: FacturationRuleConfig = {
   CASH: 'INTERNAL_RECEIPT',
   TRANSFER: 'INTERNAL_RECEIPT',
   CREDIT: 'INTERNAL_RECEIPT',
   MERCADOPAGO_QR: 'FISCAL_INVOICE',
   MERCADOPAGO_CARD: 'FISCAL_INVOICE',
-  CARD: 'INTERNAL_RECEIPT',
+  CUENTA_DNI: 'FISCAL_INVOICE',
+  CARD: 'FISCAL_INVOICE',
 };
 
 export class FiscalRulesEngine {
   private static rules: FacturationRuleConfig = { ...defaultFacturationRules };
-  private static arcaClient = new ArcaClient();
 
   /**
    * Retrieves current facturation rules configuration.
@@ -44,7 +45,7 @@ export class FiscalRulesEngine {
 
   /**
    * Processes post-payment fiscal rules evaluation.
-   * If rule is FISCAL_INVOICE, invokes ArcaClient to issue invoice and obtain CAE.
+   * If rule is FISCAL_INVOICE, requests the server to issue the invoice via ARCA and obtain CAE.
    * If INTERNAL_RECEIPT, generates internal ticket receipt.
    */
   public static async processFiscalEvaluation(
@@ -54,8 +55,7 @@ export class FiscalRulesEngine {
     const receiptType = this.evaluateReceiptType(paymentMethod);
 
     if (receiptType === 'FISCAL_INVOICE') {
-      // Send to ARCA module for official electronic invoicing & CAE
-      const fiscalResult = await this.arcaClient.createInvoice(invoicePayload);
+      const { fiscalResult } = await createArcaInvoice(invoicePayload);
       return {
         receiptType: 'FISCAL_INVOICE',
         fiscalResult,

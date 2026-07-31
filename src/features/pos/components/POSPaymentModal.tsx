@@ -24,20 +24,21 @@ import {
   Printer,
   Clock,
   CheckCheck,
-  QrCode as QrIcon,
   ShieldCheck,
+  RefreshCw,
 } from 'lucide-react';
 import type { PaymentMethodType, Sale } from '../../../types';
+import { QRCodeSVG } from 'qrcode.react';
 import { usePOSStore } from '../store/usePOSStore';
 import { useNotificationStore } from '../../../store/useNotificationStore';
 import { useCreateSale } from '../../../hooks/useSales';
 import { getNextTicketNumber } from '../../../services/ticketCounterService';
-import { MercadoPagoClient } from '../../../mercadoPago/MercadoPagoClient';
 import { CuentaDniPaymentProvider, type CuentaDniPaymentResult } from '../../payments/providers/CuentaDniPaymentProvider';
 import { FiscalRulesEngine } from '../../billing/services/FiscalRulesEngine';
 import { MercadoPagoLogo } from '../../../components/common/MercadoPagoLogo';
 import { CuentaDniLogo } from '../../../components/common/CuentaDniLogo';
 import { calculateCartTotals } from '../utils/calculateCartTotals';
+import { createMercadoPagoQr, cancelMercadoPagoQr, getMercadoPagoQrStatus, getMercadoPagoStaticQr } from '../../../services/mercadoPagoQrApi';
 
 interface POSPaymentModalProps {
   onPrintTicket: (sale: Sale) => void;
@@ -53,25 +54,34 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
 
   const [selectedMethod, setSelectedMethod] = React.useState<ExtendedPaymentMethod>('CASH');
   const [payAmount, setPayAmount] = React.useState<string>('');
-  const [surchargePercent, setSurchargePercent] = React.useState(5);
+  const [cardType, setCardType] = React.useState<'DEBIT' | 'CREDIT'>('DEBIT');
+  const [cdniPercent, setCdniPercent] = React.useState(5);
   const amountRef = React.useRef<HTMLInputElement>(null);
 
-  // Mercado Pago QR approval state
-  const [mpStatus, setMpStatus] = React.useState<'IDLE' | 'WAITING' | 'APPROVED'>('IDLE');
+  // Mercado Pago dynamic QR approval state
+  const [mpStatus, setMpStatus] = React.useState<'IDLE' | 'CREATING' | 'WAITING' | 'APPROVED' | 'ERROR'>('IDLE');
   const [mpTxId, setMpTxId] = React.useState<string | null>(null);
-  const [mpQrUrl, setMpQrUrl] = React.useState<string | null>(null);
+  const [mpReference, setMpReference] = React.useState<string | null>(null);
+  const [mpQrData, setMpQrData] = React.useState<string | null>(null);
+  const [mpAmount, setMpAmount] = React.useState(0);
+  const [mpError, setMpError] = React.useState('');
+  const [isVerifyingMpPayment, setIsVerifyingMpPayment] = React.useState(false);
+  const [manualValidateOpen, setManualValidateOpen] = React.useState(false);
+  const mpRequestRef = React.useRef(0);
+  const mpPaymentAddedRef = React.useRef(false);
+  const mpPendingRef = React.useRef(false);
 
   // Cuenta DNI manual reference confirmation state
   const [cdniPayment, setCdniPayment] = React.useState<CuentaDniPaymentResult | null>(null);
   const [cdniRefInput, setCdniRefInput] = React.useState('');
 
-  const mpClient = React.useMemo(() => new MercadoPagoClient(), []);
   const cdniProvider = React.useMemo(() => new CuentaDniPaymentProvider(), []);
 
   const { grandTotal } = calculateCartTotals(cart, discountGlobal);
   const totalPaid = payments.reduce((acc, p) => acc + p.amount, 0);
   const pendingAmount = Math.max(0, grandTotal - totalPaid);
   const hasSurcharge = selectedMethod === 'CARD' || selectedMethod === 'MERCADOPAGO' || selectedMethod === 'CUENTA_DNI';
+  const surchargePercent = selectedMethod === 'MERCADOPAGO' ? 5 : selectedMethod === 'CARD' ? (cardType === 'CREDIT' ? 10 : 5) : cdniPercent;
   const surchargeAmount = hasSurcharge ? pendingAmount * (surchargePercent / 100) : 0;
   const checkoutTotal = grandTotal + surchargeAmount;
   const change = Math.max(0, totalPaid - checkoutTotal);
@@ -82,28 +92,137 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
   React.useEffect(() => {
     if (isPaymentModalOpen) {
       setPayAmount('');
+      setSelectedMethod('CASH');
+      setMpStatus('IDLE');
+      setMpReference(null);
+      setMpQrData(null);
+      setMpError('');
       setTimeout(() => amountRef.current?.focus(), 50);
+    } else {
+      if (mpPendingRef.current) {
+        void cancelMercadoPagoQr().catch(() => undefined);
+      }
+      mpPendingRef.current = false;
+      mpRequestRef.current += 1;
+      mpPaymentAddedRef.current = false;
+      setMpStatus('IDLE');
+      setMpReference(null);
+      setMpQrData(null);
+      setMpError('');
     }
   }, [isPaymentModalOpen]);
+
+  const createMercadoPagoQrOrder = async (amount: number) => {
+    const requestId = ++mpRequestRef.current;
+    const externalReference = `POS-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+    mpPaymentAddedRef.current = false;
+    mpPendingRef.current = true;
+    setMpStatus('CREATING');
+    setMpTxId(null);
+    setMpReference(null);
+    setMpQrData(null);
+    setMpAmount(amount);
+    setMpError('');
+    try {
+      const order = await createMercadoPagoQr({
+        externalReference,
+        title: 'Venta POS Mis Dos Amores',
+        totalAmount: amount,
+        // Mercado Pago requires its item total to match the exact outstanding balance, including discounts and surcharges.
+        items: [{ title: 'Saldo de venta POS', quantity: 1, unitPrice: amount }],
+      });
+      if (requestId !== mpRequestRef.current) return;
+      const staticQr = await getMercadoPagoStaticQr();
+      if (requestId !== mpRequestRef.current) return;
+      setMpReference(order.externalReference);
+      setMpQrData(staticQr.qrData);
+      setMpStatus('WAITING');
+    } catch (error) {
+      if (requestId !== mpRequestRef.current) return;
+      setMpError(error instanceof Error ? error.message : 'No se pudo generar el QR de Mercado Pago.');
+      setMpStatus('ERROR');
+    }
+  };
+
+  React.useEffect(() => {
+    if (!isPaymentModalOpen || selectedMethod !== 'MERCADOPAGO' || mpStatus !== 'WAITING' || !mpReference) return;
+    let active = true;
+    const checkPayment = async () => {
+      try {
+        const payment = await getMercadoPagoQrStatus(mpReference);
+        if (!active) return;
+        if (payment.status === 'approved' && payment.paymentId && !mpPaymentAddedRef.current) {
+          mpPaymentAddedRef.current = true;
+          mpPendingRef.current = false;
+          setMpTxId(payment.paymentId);
+          setMpStatus('APPROVED');
+          addPayment({ method: 'QR', amount: mpAmount, reference: payment.paymentId, change: 0 });
+          addNotification({ title: 'Mercado Pago aprobado', message: `Transacción confirmada: ${payment.paymentId}`, type: 'success' });
+        } else if (payment.status === 'rejected' || payment.status === 'cancelled') {
+          setMpError(payment.detail || 'El pago fue rechazado o cancelado.');
+          setMpStatus('ERROR');
+        }
+      } catch (error) {
+        if (!active) return;
+        setMpError(error instanceof Error ? error.message : 'No se pudo consultar el estado del pago.');
+        setMpStatus('ERROR');
+      }
+    };
+    void checkPayment();
+    const interval = window.setInterval(() => void checkPayment(), 3000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [addNotification, addPayment, isPaymentModalOpen, mpAmount, mpReference, mpStatus, selectedMethod]);
+
+  const verifyMercadoPagoPayment = async () => {
+    if (!mpReference) return;
+    setIsVerifyingMpPayment(true);
+    try {
+      const payment = await getMercadoPagoQrStatus(mpReference);
+      if (payment.status === 'approved' && payment.paymentId && !mpPaymentAddedRef.current) {
+        mpPaymentAddedRef.current = true;
+        mpPendingRef.current = false;
+        setMpTxId(payment.paymentId);
+        setMpStatus('APPROVED');
+        addPayment({ method: 'QR', amount: mpAmount, reference: payment.paymentId, change: 0 });
+        addNotification({ title: 'Mercado Pago aprobado', message: `Transacción confirmada: ${payment.paymentId}`, type: 'success' });
+      } else if (payment.status === 'rejected' || payment.status === 'cancelled') {
+        setMpError(payment.detail || 'El pago fue rechazado o cancelado.');
+        setMpStatus('ERROR');
+      } else {
+        addNotification({ title: 'Pago pendiente', message: 'Todavía no se detecta el pago. Asegurate de que el cliente haya abonado.', type: 'warning' });
+      }
+    } catch (error) {
+      setMpError(error instanceof Error ? error.message : 'No se pudo consultar el estado del pago.');
+      setMpStatus('ERROR');
+    } finally {
+      setIsVerifyingMpPayment(false);
+    }
+  };
+
+  const confirmManualMpValidation = () => {
+    if (mpPaymentAddedRef.current) return;
+    mpPaymentAddedRef.current = true;
+    mpPendingRef.current = false;
+    setMpTxId('MANUAL');
+    setMpStatus('APPROVED');
+    addPayment({ method: 'QR', amount: mpAmount, reference: `MANUAL-${Date.now()}`, change: 0 });
+    addNotification({ title: 'Pago validado manualmente', message: `Se asoció el pago manual de $${mpAmount.toFixed(2)} al ticket.`, type: 'success' });
+    setManualValidateOpen(false);
+    void cancelMercadoPagoQr().catch(() => undefined);
+  };
 
   const handleSelectMethod = (method: ExtendedPaymentMethod) => {
     setSelectedMethod(method);
     const methodHasSurcharge = method === 'CARD' || method === 'MERCADOPAGO' || method === 'CUENTA_DNI';
-    const amount = pendingAmount * (methodHasSurcharge ? 1 + surchargePercent / 100 : 1);
+    const percent = method === 'MERCADOPAGO' ? 5 : method === 'CARD' ? (cardType === 'CREDIT' ? 10 : 5) : cdniPercent;
+    const amount = pendingAmount * (methodHasSurcharge ? 1 + percent / 100 : 1);
     setPayAmount(method === 'MERCADOPAGO' || method === 'CUENTA_DNI' ? '' : amount.toFixed(2));
 
     if (method === 'MERCADOPAGO') {
-      setMpStatus('WAITING');
-      setMpTxId(null);
-      mpClient
-        .createDynamicQR({
-          externalReference: `TICK-${Date.now()}`,
-          title: 'Venta POS Nexus',
-          totalAmount: amount,
-          items: cart.map((i) => ({ title: i.product.name, quantity: i.quantity, unitPrice: i.unitPrice })),
-        })
-        .then((res) => setMpQrUrl(res.qrCode))
-        .catch(() => setMpQrUrl(null));
+      void createMercadoPagoQrOrder(amount);
     } else if (method === 'CUENTA_DNI') {
       cdniProvider
         .createPayment({
@@ -115,33 +234,28 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
           setCdniRefInput('');
         });
     } else {
+      if (mpPendingRef.current) {
+        void cancelMercadoPagoQr().catch(() => undefined);
+        mpPendingRef.current = false;
+      }
+      mpRequestRef.current += 1;
       setMpStatus('IDLE');
+      setMpReference(null);
+      setMpQrData(null);
+      setMpError('');
       setCdniPayment(null);
     }
   };
 
-  const handleSurchargePercentChange = (percent: number) => {
-    setSurchargePercent(percent);
+  const handleCardTypeChange = (type: 'DEBIT' | 'CREDIT') => {
+    setCardType(type);
     if (selectedMethod === 'CARD') {
-      setPayAmount((pendingAmount * (1 + percent / 100)).toFixed(2));
+      setPayAmount((pendingAmount * (1 + (type === 'CREDIT' ? 10 : 5) / 100)).toFixed(2));
     }
   };
 
-  const handleApproveMp = (txId: string) => {
-    setMpStatus('APPROVED');
-    setMpTxId(txId);
-    const amt = amountForMethod;
-    addPayment({
-      method: 'QR',
-      amount: amt,
-      reference: txId,
-      change: 0,
-    });
-    addNotification({
-      title: 'Mercado Pago Aprobado',
-      message: `Transacción confirmada: ${txId}`,
-      type: 'success',
-    });
+  const handleCdniPercentChange = (percent: number) => {
+    setCdniPercent(percent);
   };
 
   const handleConfirmCdni = async () => {
@@ -195,20 +309,20 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
       const primaryMethod = selectedMethod === 'MERCADOPAGO' ? 'MERCADOPAGO_QR' : selectedMethod === 'CUENTA_DNI' ? 'CUENTA_DNI' : selectedMethod;
 
       let fiscalEvaluation = null;
+      let arcaError = null;
       if (navigator.onLine) {
         try {
           fiscalEvaluation = await FiscalRulesEngine.processFiscalEvaluation(primaryMethod, {
-            salesPoint: 1,
-            voucherType: 6,
             concept: 1,
             docType: customer.taxId ? 80 : 99,
             docNumber: customer.taxId || '00000000',
+            condicionIvaId: 5,
             subtotal: checkoutTotal,
             taxTotal: 0,
             grandTotal: checkoutTotal,
           });
-        } catch {
-          fiscalEvaluation = null;
+        } catch (err) {
+          arcaError = err instanceof Error ? err.message : 'ARCA no pudo emitir la factura.';
         }
       }
 
@@ -216,11 +330,24 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
       if (!sale) return;
 
       if (fiscalEvaluation?.fiscalResult) {
-        sale.notes = `${hasSurcharge ? `Recargo ${surchargePercent}%: $${surchargeAmount.toFixed(2)}. ` : ''}Factura ARCA Emitida. CAE: ${fiscalEvaluation.fiscalResult.cae}`;
+        const fr = fiscalEvaluation.fiscalResult;
+        sale.fiscalInvoice = {
+          cae: fr.cae,
+          caeExpiration: fr.caeExpiration,
+          voucherType: fr.voucherType,
+          voucherNumber: fr.voucherNumber,
+          salesPoint: fr.salesPoint,
+          emittedAt: new Date().toISOString(),
+          status: fr.result,
+          docType: customer.taxId ? 80 : 99,
+          docNumber: customer.taxId || '00000000',
+          observations: fr.observations,
+        };
+        sale.notes = `Factura ARCA #${fr.voucherNumber} emitida. CAE: ${fr.cae}`;
       } else if (fiscalEvaluation?.internalReceiptNo) {
-        sale.notes = `${hasSurcharge ? `Recargo ${surchargePercent}%: $${surchargeAmount.toFixed(2)}. ` : ''}Comprobante Interno: ${fiscalEvaluation.internalReceiptNo}`;
+        sale.notes = `Comprobante Interno: ${fiscalEvaluation.internalReceiptNo}`;
       } else {
-        sale.notes = `${hasSurcharge ? `Recargo ${surchargePercent}%: $${surchargeAmount.toFixed(2)}. ` : ''}Ticket #${ticketNumber}`;
+        sale.notes = `Ticket #${ticketNumber}`;
       }
 
       const { id: _id, ...saleData } = sale;
@@ -231,11 +358,13 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
       });
 
       addNotification({
-        title: 'Venta Procesada Exitosamente',
-        message: navigator.onLine
-          ? `Ticket ${sale.ticketNumber} - ${fiscalEvaluation?.fiscalResult ? 'Factura ARCA Emitida (CAE OK)' : 'Comprobante Interno Emitido'}`
+        title: arcaError ? 'Venta sin factura ARCA' : 'Venta Procesada Exitosamente',
+        message: arcaError
+          ? `Ticket ${sale.ticketNumber} guardado, pero ARCA no emitió factura: ${arcaError}`
+          : navigator.onLine
+          ? `Ticket ${sale.ticketNumber} - ${fiscalEvaluation?.fiscalResult ? `Factura ARCA #${fiscalEvaluation.fiscalResult.voucherNumber} (CAE OK)` : 'Comprobante Interno Emitido'}`
           : `Ticket ${sale.ticketNumber} guardado localmente. Se sincronizará al recuperar conexión.`,
-        type: 'success',
+        type: arcaError ? 'warning' : 'success',
       });
 
       onPrintTicket(sale);
@@ -249,9 +378,10 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
     }
   };
 
-  const isCheckoutDisabled = totalPaid < checkoutTotal;
+  const isCheckoutDisabled = totalPaid < checkoutTotal || (selectedMethod === 'MERCADOPAGO' && mpStatus !== 'APPROVED');
 
   return (
+    <>
     <Dialog open={isPaymentModalOpen} onClose={closePaymentModal} maxWidth="md" fullWidth slotProps={{ paper: { sx: { borderRadius: 4, p: 1, bgcolor: '#FFFFFF', color: '#0F172A', border: '2px solid #E2E8F0' } } }}>
       <DialogTitle sx={{ fontWeight: 900, fontSize: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#0F172A' }}>
         <span>💳 Procesar Cobro (Pago Mixto / Múltiples Medios)</span>
@@ -261,7 +391,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
 
       <DialogContent sx={{ py: 3 }}>
         <Alert severity="info" icon={<ShieldCheck size={20} />} sx={{ mb: 3, borderRadius: 3, fontSize: '1rem', fontWeight: 700 }}>
-          Política Fiscal Centralizada: Comprobante ARCA únicamente emitido si el pago de Mercado Pago o Cuenta DNI está APROBADO.
+          Política Fiscal Centralizada: Comprobante ARCA únicamente emitido si el pago de Mercado Pago, Cuenta DNI o tarjeta está APROBADO.
         </Alert>
 
         <Grid container spacing={3}>
@@ -428,42 +558,90 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
               <Paper elevation={0} sx={{ p: 2, mb: 3, borderRadius: 3, bgcolor: '#FFF7ED', border: '2px solid #FED7AA' }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
                   <Typography sx={{ fontWeight: 900, color: '#9A3412' }}>Recargo por {selectedMethod === 'CARD' ? 'tarjeta' : 'QR'}:</Typography>
-                  <TextField
-                    select
-                    size="small"
-                    label="Porcentaje"
-                    value={surchargePercent}
-                    onChange={(event) => handleSurchargePercentChange(Number(event.target.value))}
-                    sx={{ minWidth: 130, bgcolor: '#FFFFFF' }}
-                  >
-                    {[5, 6, 7, 8, 9, 10].map((percent) => <MenuItem key={percent} value={percent}>{percent}%</MenuItem>)}
-                  </TextField>
+                  {selectedMethod === 'MERCADOPAGO' && (
+                    <Chip label="5%" size="small" sx={{ fontWeight: 900, bgcolor: '#FFFFFF', border: '1px solid #FED7AA', color: '#9A3412', borderRadius: 2, fontSize: '0.9rem' }} />
+                  )}
+                  {selectedMethod === 'CARD' && (
+                    <TextField
+                      select
+                      size="small"
+                      label="Tipo de tarjeta"
+                      value={cardType}
+                      onChange={(event) => handleCardTypeChange(event.target.value as 'DEBIT' | 'CREDIT')}
+                      sx={{ minWidth: 190, bgcolor: '#FFFFFF' }}
+                    >
+                      <MenuItem value="DEBIT">Débito (5%)</MenuItem>
+                      <MenuItem value="CREDIT">Crédito (10%)</MenuItem>
+                    </TextField>
+                  )}
+                  {selectedMethod === 'CUENTA_DNI' && (
+                    <TextField
+                      select
+                      size="small"
+                      label="Porcentaje"
+                      value={cdniPercent}
+                      onChange={(event) => handleCdniPercentChange(Number(event.target.value))}
+                      sx={{ minWidth: 130, bgcolor: '#FFFFFF' }}
+                    >
+                      {[5, 6, 7, 8, 9, 10].map((percent) => <MenuItem key={percent} value={percent}>{percent}%</MenuItem>)}
+                    </TextField>
+                  )}
                   <Typography sx={{ fontWeight: 900, color: '#9A3412' }}>+${surchargeAmount.toFixed(2)}</Typography>
                 </Box>
               </Paper>
             )}
 
-            {/* Mercado Pago QR Container */}
+            {/* Mercado Pago standing QR (modelo atendido): the order is attached to the caja's static QR */}
             {selectedMethod === 'MERCADOPAGO' && (
               <Paper elevation={0} sx={{ p: 2.5, mb: 3, borderRadius: 3.5, bgcolor: '#F0F9FF', border: '2px solid #BAE6FD', textAlign: 'center' }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, mb: 1 }}>
                   <MercadoPagoLogo height={28} />
-                  <Typography variant="subtitle1" sx={{ fontWeight: 900, color: '#0369A1' }}>Cobro QR Presencial</Typography>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 900, color: '#0369A1' }}>Cobro QR Mercado Pago</Typography>
                 </Box>
 
-                {mpQrUrl ? (
-                  <Box component="img" src={mpQrUrl} alt="QR Mercado Pago" sx={{ width: 160, height: 160, margin: '0 auto 12px', display: 'block', borderRadius: 3, border: '1px solid #BAE6FD' }} />
+                <Box sx={{ bgcolor: '#FFFFFF', borderRadius: 3, border: '1px solid #BAE6FD', p: 1.5, mb: 1.5 }}>
+                  <Typography variant="body2" sx={{ fontWeight: 800, color: '#0284C7' }}>Monto a pagar</Typography>
+                  <Typography variant="h4" sx={{ fontWeight: 900, color: '#075985' }}>${amountForMethod.toFixed(2)}</Typography>
+                </Box>
+
+                {mpQrData ? (
+                  <Box sx={{ width: 184, height: 184, display: 'grid', placeItems: 'center', margin: '0 auto 12px', bgcolor: '#FFFFFF', borderRadius: 3, border: '1px solid #BAE6FD' }}>
+                    <QRCodeSVG value={mpQrData} size={160} level="M" />
+                  </Box>
                 ) : (
                   <CircularProgress size={36} sx={{ my: 2 }} />
                 )}
 
+                {mpStatus === 'CREATING' && <Typography sx={{ mb: 1.5, fontWeight: 800, color: '#0369A1' }}>Cargando el monto al QR del mostrador...</Typography>}
+
                 {mpStatus === 'WAITING' && (
-                  <Box sx={{ p: 1.5, bgcolor: '#FFFFFF', borderRadius: 2.5, border: '1px solid #BAE6FD', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1.5, mb: 1.5 }}>
-                    <CircularProgress size={20} color="primary" />
-                    <Typography variant="body1" sx={{ fontWeight: 800, color: '#0369A1' }}>
-                      Aguardando pago del cliente en app Mercado Pago...
-                    </Typography>
-                  </Box>
+                  <>
+                    <Box sx={{ p: 1.5, bgcolor: '#FFFFFF', borderRadius: 2.5, border: '1px solid #BAE6FD', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1.5, mb: 1.5 }}>
+                      <CircularProgress size={20} color="primary" />
+                      <Typography variant="body1" sx={{ fontWeight: 800, color: '#0369A1' }}>
+                        El cliente escanea el QR del mostrador y verá el monto a pagar automáticamente...
+                      </Typography>
+                    </Box>
+                    <Box sx={{ display: 'grid', gap: 1.5 }}>
+                      <Button
+                        variant="contained"
+                        onClick={() => void verifyMercadoPagoPayment()}
+                        startIcon={isVerifyingMpPayment ? <CircularProgress size={18} color="inherit" /> : <RefreshCw size={18} />}
+                        disabled={isVerifyingMpPayment}
+                        sx={{ borderRadius: 2.5, fontWeight: 900, bgcolor: '#0369A1', '&:hover': { bgcolor: '#075985' } }}
+                      >
+                        {isVerifyingMpPayment ? 'Comprobando...' : 'Comprobar pago'}
+                      </Button>
+                      <Button
+                        variant="outlined"
+                        onClick={() => setManualValidateOpen(true)}
+                        startIcon={<CheckCheck size={18} />}
+                        sx={{ borderRadius: 2.5, fontWeight: 900 }}
+                      >
+                        Validar pago manualmente
+                      </Button>
+                    </Box>
+                  </>
                 )}
 
                 {mpStatus === 'APPROVED' && (
@@ -475,16 +653,13 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
                   </Box>
                 )}
 
-                {mpStatus === 'WAITING' && (
-                  <Button
-                    size="small"
-                    variant="contained"
-                    onClick={() => handleApproveMp('MP-TX-' + Math.floor(100000 + Math.random() * 900000))}
-                    startIcon={<QrIcon size={16} />}
-                    sx={{ borderRadius: 2.5, fontWeight: 800, bgcolor: '#009EE3', textTransform: 'none' }}
-                  >
-                    Simular Aprobación Instantánea Webhook MP
-                  </Button>
+                {mpStatus === 'ERROR' && (
+                  <Box sx={{ display: 'grid', gap: 1.5 }}>
+                    <Alert severity="error">{mpError}</Alert>
+                    <Button variant="outlined" onClick={() => void createMercadoPagoQrOrder(amountForMethod)} sx={{ borderRadius: 2.5, fontWeight: 800 }}>
+                      Generar un nuevo QR
+                    </Button>
+                  </Box>
                 )}
               </Paper>
             )}
@@ -652,5 +827,26 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
         </Button>
       </DialogActions>
     </Dialog>
+
+    <Dialog open={manualValidateOpen} onClose={() => setManualValidateOpen(false)} maxWidth="xs" fullWidth>
+      <DialogTitle sx={{ fontWeight: 900, color: '#0F172A' }}>Validar pago manualmente</DialogTitle>
+      <DialogContent>
+        <Typography variant="body1" sx={{ fontWeight: 700, color: '#0F172A', mb: 1 }}>
+          ¿Confirmás que el cliente pagó <Box component="span" sx={{ color: '#15803D' }}>${mpAmount.toFixed(2)}</Box> por Mercado Pago?
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          Usá esta opción solo si verificaste el cobro (por ejemplo, en la Point Smart o en tu celular). El pago se asociará al ticket sin comprobación automática.
+        </Typography>
+      </DialogContent>
+      <DialogActions sx={{ p: 2.5 }}>
+        <Button onClick={() => setManualValidateOpen(false)} variant="outlined" sx={{ borderRadius: 2.5, fontWeight: 800 }}>
+          Cancelar
+        </Button>
+        <Button onClick={confirmManualMpValidation} variant="contained" color="success" startIcon={<CheckCheck size={18} />} sx={{ borderRadius: 2.5, fontWeight: 900 }}>
+          Confirmar pago
+        </Button>
+      </DialogActions>
+    </Dialog>
+    </>
   );
 };

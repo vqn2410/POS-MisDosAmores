@@ -2,7 +2,7 @@ import React from 'react';
 import { Box, Paper, Typography, Grid, Chip, Button, Alert, CircularProgress } from '@mui/material';
 import { CheckCircle2, RefreshCw, Workflow, Database, CloudUpload } from 'lucide-react';
 import { MercadoPagoClient } from '../../mercadoPago/MercadoPagoClient';
-import { ArcaClient } from '../../arca/ArcaClient';
+import { getArcaStatus } from '../../services/arcaApi';
 import { seedFirebaseData } from '../auth/services/firebaseSeedService';
 
 export const IntegrationsView: React.FC = () => {
@@ -18,9 +18,13 @@ export const IntegrationsView: React.FC = () => {
   };
 
   const handleTestArca = async () => {
-    const arcaClient = new ArcaClient();
-    const ta = await arcaClient.authenticate('wsfe');
-    setTestResult(`ARCA / WSAA OK! Token de Acceso (TA) activo expedido hasta: ${ta.expiration.toLocaleTimeString()}`);
+    const status = await getArcaStatus();
+    const entorno = status.environment === 'production' ? 'Producción' : 'Homologación';
+    const estado = status.stub
+      ? `MODO STUB (sin certificados configurados) · CUIT ${status.cuit || 'sin configurar'}`
+      : `CUIT ${status.cuit} · PtoVta ${status.salesPoint}`;
+    const taExpiration = status.ta?.expiration ? new Date(status.ta.expiration).toLocaleTimeString() : '—';
+    setTestResult(`ARCA / WSAA OK! [${entorno}] ${estado} · Token de Acceso (TA) vigente hasta: ${taExpiration}`);
     setTestError(null);
   };
 

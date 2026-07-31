@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Mis Dos Amores - Ofertas</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 55%, #0f172a 100%);
+    color: #fff;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .screen { width: 100%; height: 100%; display: flex; flex-direction: column; padding: 4vh 5vw; }
+  .header { text-align: center; }
+  .brand { font-size: clamp(1.6rem, 4vw, 3rem); font-weight: 800; letter-spacing: 0.5px; }
+  .brand span { color: #38bdf8; }
+  .tagline { font-size: clamp(0.9rem, 1.6vw, 1.2rem); color: #94a3b8; margin-top: 4px; }
+
+  .offers-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .offers-label { font-size: clamp(1rem, 2vw, 1.4rem); font-weight: 700; color: #fbbf24; text-transform: uppercase; letter-spacing: 0.2em; margin-bottom: 2vh; }
+  .offer-card {
+    width: min(70vw, 640px);
+    background: rgba(255, 255, 255, 0.06);
+    border: 2px solid rgba(255, 255, 255, 0.14);
+    border-radius: 28px;
+    padding: 4vh 5vw;
+    text-align: center;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+    animation: fadeSlide 0.6s ease;
+  }
+  .offer-title { font-size: clamp(2rem, 6vw, 4rem); font-weight: 900; }
+  .offer-detail { font-size: clamp(1rem, 2.4vw, 1.6rem); color: #cbd5e1; margin-top: 6px; }
+  .offer-price-row { display: flex; align-items: baseline; justify-content: center; gap: 18px; margin-top: 2vh; }
+  .offer-old-price { font-size: clamp(1.2rem, 2.6vw, 1.8rem); color: #64748b; text-decoration: line-through; }
+  .offer-price { font-size: clamp(2.6rem, 7vw, 4.6rem); font-weight: 900; color: #38bdf8; }
+  .dots { display: flex; gap: 10px; margin-top: 2.5vh; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; background: rgba(255,255,255,0.25); }
+  .dot.active { background: #fbbf24; }
+
+  .qr-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .qr-label { font-size: clamp(1rem, 2vw, 1.4rem); font-weight: 700; color: #38bdf8; text-transform: uppercase; letter-spacing: 0.2em; }
+  .qr-total { font-size: clamp(3rem, 10vw, 7rem); font-weight: 900; color: #fff; margin: 1vh 0; }
+  .qr-box {
+    background: #fff; border-radius: 24px; padding: 2.5vw;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
+  }
+  .qr-box img { width: min(44vh, 40vw); height: auto; display: block; }
+  .qr-hint { font-size: clamp(1rem, 2vw, 1.4rem); color: #cbd5e1; margin-top: 2vh; }
+
+  .footer { text-align: center; color: #64748b; font-size: clamp(0.8rem, 1.4vw, 1rem); }
+
+  @keyframes fadeSlide {
+    from { opacity: 0; transform: translateY(14px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+  <div class="screen">
+    <div class="header">
+      <div class="brand">Mis Dos Amores</div>
+      <div class="tagline">Escaneá el QR del mostrador y pagá con Mercado Pago</div>
+    </div>
+
+    <div id="offersView" class="offers-body">
+      <div class="offers-label">Ofertas del día</div>
+      <div class="offer-card" id="offerCard">
+        <div class="offer-title" id="offerTitle">...</div>
+        <div class="offer-detail" id="offerDetail"></div>
+        <div class="offer-price-row">
+          <div class="offer-old-price" id="offerOldPrice"></div>
+          <div class="offer-price" id="offerPrice"></div>
+        </div>
+      </div>
+      <div class="dots" id="offerDots"></div>
+    </div>
+
+    <div id="qrView" class="qr-body hidden">
+      <div class="qr-label">Cobro en curso</div>
+      <div class="qr-total" id="qrTotal"></div>
+      <div class="qr-box"><img src="./mp-atendido.svg" alt="Código QR Mercado Pago" /></div>
+      <div class="qr-hint">Escaneá y pagá con la app de Mercado Pago</div>
+    </div>
+
+    <div class="footer" id="footer">Actualizando...</div>
+  </div>
+
+  <script>
+    const offersView = document.getElementById('offersView');
+    const qrView = document.getElementById('qrView');
+    const footer = document.getElementById('footer');
+    const offerTitle = document.getElementById('offerTitle');
+    const offerDetail = document.getElementById('offerDetail');
+    const offerOldPrice = document.getElementById('offerOldPrice');
+    const offerPrice = document.getElementById('offerPrice');
+    const offerDots = document.getElementById('offerDots');
+    const qrTotal = document.getElementById('qrTotal');
+
+    const formatMoney = (n) => '$' + Number(n).toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+
+    let offers = [];
+    let rotateSeconds = 6;
+    let index = 0;
+    let rotationTimer = null;
+    let showQr = false;
+
+    function renderOffer() {
+      if (!offers.length) return;
+      const offer = offers[index % offers.length];
+      offerTitle.textContent = offer.titulo;
+      offerDetail.textContent = offer.detalle || '';
+      offerOldPrice.textContent = offer.precioAnterior ? formatMoney(offer.precioAnterior) : '';
+      offerOldPrice.style.display = offer.precioAnterior ? '' : 'none';
+      offerPrice.textContent = formatMoney(offer.precio);
+      offerDots.innerHTML = '';
+      offers.forEach((_, i) => {
+        const dot = document.createElement('div');
+        dot.className = 'dot' + (i === index % offers.length ? ' active' : '');
+        offerDots.appendChild(dot);
+      });
+      const card = document.getElementById('offerCard');
+      card.style.animation = 'none';
+      void card.offsetWidth;
+      card.style.animation = '';
+    }
+
+    function startRotation() {
+      stopRotation();
+      if (offers.length > 1) rotationTimer = setInterval(() => {
+        index += 1;
+        renderOffer();
+      }, rotateSeconds * 1000);
+    }
+    function stopRotation() { if (rotationTimer) clearInterval(rotationTimer); rotationTimer = null; }
+
+    function setMode(active) {
+      showQr = active;
+      offersView.classList.toggle('hidden', active);
+      qrView.classList.toggle('hidden', !active);
+      if (active) {
+        stopRotation();
+      } else if (offers.length) {
+        startRotation();
+      }
+    }
+
+    function tick(state) {
+      const now = Date.now();
+      const active = state && state.active && new Date(state.expiresAt).getTime() > now;
+      if (active) {
+        qrTotal.textContent = formatMoney(state.amount);
+        footer.textContent = 'Cobro iniciado ' + new Date(state.startedAt).toLocaleTimeString('es-AR') + ' · Esperando pago';
+      } else {
+        footer.textContent = 'No hay cobros en curso · ' + new Date().toLocaleTimeString('es-AR');
+      }
+      if (active !== showQr) setMode(active);
+    }
+
+    async function loadOffers() {
+      try {
+        const res = await fetch('./ofertas.json');
+        const data = await res.json();
+        offers = Array.isArray(data.ofertas) ? data.ofertas : [];
+        rotateSeconds = Number(data.rotacionSegundos) > 0 ? Number(data.rotacionSegundos) : 6;
+        index = 0;
+        renderOffer();
+        if (!showQr) startRotation();
+      } catch {
+        footer.textContent = 'No se pudieron cargar las ofertas';
+      }
+    }
+
+    async function poll() {
+      try {
+        const res = await fetch('/api/mercadopago/display-state');
+        const state = await res.json();
+        tick(state);
+      } catch {
+        tick(null);
+      }
+    }
+
+    loadOffers();
+    poll();
+    setInterval(poll, 3000);
+  </script>
+</body>
+</html>

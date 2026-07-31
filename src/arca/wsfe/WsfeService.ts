@@ -23,8 +23,8 @@ export class WsfeService {
       cae: mockCae,
       caeExpiration: new Date(Date.now() + 10 * 24 * 3600 * 1000).toISOString().slice(0, 10).replace(/-/g, ''),
       voucherNumber: mockVoucherNumber,
-      salesPoint: payload.salesPoint,
-      voucherType: payload.voucherType,
+      salesPoint: payload.salesPoint ?? 1,
+      voucherType: payload.voucherType ?? 6,
       result: 'A',
       observations: [],
     };

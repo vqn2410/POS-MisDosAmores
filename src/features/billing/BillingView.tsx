@@ -20,8 +20,12 @@ import { Download, CheckCircle2, Receipt, XCircle, Printer, ArrowLeft } from 'lu
 import { useSales, useUpdateSale } from '../../hooks/useSales';
 import { useUpdateProduct } from '../../hooks/useProducts';
 import { POSTicketPrintModal } from '../pos/components/POSTicketPrintModal';
-import type { Sale } from '../../types';
+import { createArcaInvoice } from '../../services/arcaApi';
+import { useNotificationStore } from '../../store/useNotificationStore';
+import type { Sale, FiscalInvoice } from '../../types';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
+
+const CREDIT_NOTE_TYPES: Record<number, number> = { 1: 3, 3: 1, 6: 8, 8: 6, 11: 13, 13: 11, 2: 5, 5: 2 };
 
 function formatIssuedAt(value: unknown): string {
   const firestoreTimestamp = value as { toDate?: () => Date } | null;
@@ -45,25 +49,74 @@ export const BillingView: React.FC = () => {
   const statusLabel = (s: typeof sales[0]): string => {
     if (s.status === 'COMPLETED') return 'EMITIDO';
     if (s.status === 'CANCELLED') return 'ANULADO';
+    if (s.status === 'REFUNDED') return 'REINTEGRADO';
     return s.status;
   };
 
   const statusColor = (s: typeof sales[0]): 'success' | 'error' | 'warning' | 'default' => {
     if (s.status === 'COMPLETED') return 'success';
     if (s.status === 'CANCELLED') return 'error';
+    if (s.status === 'REFUNDED') return 'warning';
     return 'warning';
   };
 
-  const handleCancelSale = () => {
+  const addNotification = useNotificationStore((state) => state.addNotification);
+
+  const handleCancelSale = async () => {
     const sale = sales.find((s) => s.id === cancelTargetId);
     if (!sale) return;
 
-    const updates: Partial<typeof sale> = {
+    const updates: Partial<Sale> = {
       status: 'CANCELLED',
       notes: sale.notes
         ? `${sale.notes} | ANULADO ${new Date().toISOString()}`
         : `ANULADO ${new Date().toISOString()}`,
     };
+
+    if (sale.fiscalInvoice) {
+      const original = sale.fiscalInvoice;
+      const creditNoteType = CREDIT_NOTE_TYPES[original.voucherType] ?? 13;
+      try {
+        const { fiscalResult } = await createArcaInvoice({
+          voucherType: creditNoteType,
+          concept: 1,
+          docType: original.docType ?? 99,
+          docNumber: original.docNumber || '00000000',
+          condicionIvaId: 5,
+          subtotal: sale.grandTotal,
+          taxTotal: 0,
+          grandTotal: sale.grandTotal,
+          associatedInvoice: {
+            voucherType: original.voucherType,
+            salesPoint: original.salesPoint,
+            voucherNumber: original.voucherNumber,
+          },
+        });
+
+        const creditNote: FiscalInvoice = {
+          cae: fiscalResult.cae,
+          caeExpiration: fiscalResult.caeExpiration,
+          voucherType: fiscalResult.voucherType,
+          voucherNumber: fiscalResult.voucherNumber,
+          salesPoint: fiscalResult.salesPoint,
+          emittedAt: new Date().toISOString(),
+          status: fiscalResult.result,
+          docType: original.docType ?? 99,
+          docNumber: original.docNumber || '00000000',
+          observations: fiscalResult.observations,
+        };
+
+        updates.status = 'REFUNDED';
+        updates.fiscalCreditNote = creditNote;
+        updates.notes = `${updates.notes} | NC ARCA #${fiscalResult.voucherNumber} (CAE ${fiscalResult.cae})`;
+      } catch (err) {
+        addNotification({
+          title: 'No se pudo emitir Nota de Crédito',
+          message: `El comprobante se anuló, pero ARCA no autorizó la NC del original #${original.voucherNumber}: ${err instanceof Error ? err.message : String(err)}`,
+          type: 'warning',
+        });
+      }
+    }
 
     updateSale.mutate(
       { id: sale.id, data: updates },
@@ -220,7 +273,9 @@ export const BillingView: React.FC = () => {
         <DialogTitle sx={{ fontWeight: 900 }}>¿Anular comprobante?</DialogTitle>
         <DialogContent>
           <Typography variant="body1" sx={{ fontWeight: 600, color: '#475569' }}>
-            Se marcará como ANULADO y se devolverá el stock de los productos. Esta acción no se puede deshacer.
+            {cancelTargetId && sales.find((s) => s.id === cancelTargetId)?.fiscalInvoice
+              ? 'Se emitirá una Nota de Crédito ARCA vinculada al comprobante original y se devolverá el stock. Esta acción no se puede deshacer.'
+              : 'Se marcará como ANULADO y se devolverá el stock de los productos. Esta acción no se puede deshacer.'}
           </Typography>
         </DialogContent>
         <DialogActions sx={{ p: 2, gap: 1 }}>

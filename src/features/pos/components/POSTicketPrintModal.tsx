@@ -34,6 +34,7 @@ export const POSTicketPrintModal: React.FC<POSTicketPrintModalProps> = ({ sale, 
 
   const isFiscal = sale.notes?.includes('CAE') ?? false;
   const qrData = getFiscalQrData(sale, company);
+  const ticketNote = sale.notes?.replace(/^Recargo \d+%: \$[\d.]+\.\s*/, '');
 
   const handlePrint = () => {
     window.print();
@@ -95,6 +96,9 @@ export const POSTicketPrintModal: React.FC<POSTicketPrintModalProps> = ({ sale, 
             boxShadow: '0 4px 10px rgba(0,0,0,0.05)',
           }}
         >
+          <Box sx={{ textAlign: 'center', mb: 0.5 }}>
+            <img src="/logo.png" alt="logo" style={{ width: '38mm', height: '38mm', objectFit: 'contain', display: 'block', margin: '0 auto' }} />
+          </Box>
           <Typography className="ticket-company" variant="subtitle2" align="center" sx={{ fontWeight: 900, textTransform: 'uppercase' }}>
             {company?.name || 'Nexus POS'}
           </Typography>
@@ -165,9 +169,9 @@ export const POSTicketPrintModal: React.FC<POSTicketPrintModalProps> = ({ sale, 
             </Box>
           )}
 
-          {sale.notes && (
+          {ticketNote && (
             <Typography className="ticket-note" variant="caption" align="center" sx={{ display: 'block', fontStyle: 'italic', my: 0.5 }}>
-              {sale.notes}
+              {ticketNote}
             </Typography>
           )}
 
