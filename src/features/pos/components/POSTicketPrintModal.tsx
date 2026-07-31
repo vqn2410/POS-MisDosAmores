@@ -4,37 +4,123 @@ import { Printer, CheckCircle } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import type { Sale } from '../../../types';
 import { useCompany } from '../../../hooks/useCompany';
+import { getArcaConfig, type ArcaConfig } from '../../../services/arcaApi';
 
 interface POSTicketPrintModalProps {
   sale: Sale | null;
   onClose: () => void;
 }
 
-function getFiscalQrData(sale: Sale, company: { name?: string; taxId?: string } | undefined): string | null {
-  if (!sale.notes?.includes('CAE')) return null;
-  const cae = sale.notes.match(/CAE: (\S+)/)?.[1];
-  if (!cae) return null;
-  const params = new URLSearchParams({
-    cuit: company?.taxId?.replace(/-/g, '') || '',
-    tipo: 'Factura',
-    ptoVta: sale.ticketNumber.substring(0, 4),
-    nro: sale.ticketNumber,
-    cae,
-    fchVto: '',
-    importe: sale.grandTotal.toFixed(2),
+const VOUCHER_LABELS: Record<number, string> = {
+  1: 'Factura A',
+  2: 'Nota de Débito A',
+  3: 'Nota de Crédito A',
+  6: 'Factura B',
+  7: 'Nota de Débito B',
+  8: 'Nota de Crédito B',
+  11: 'Factura C',
+  12: 'Nota de Débito C',
+  13: 'Nota de Crédito C',
+  105: 'Tique A',
+  109: 'Tique C',
+  110: 'Nota de Crédito Tique C',
+};
+
+function voucherLabel(voucherType: number): string {
+  return VOUCHER_LABELS[voucherType] || `Comprobante ${voucherType}`;
+}
+
+function taxConditionLabel(raw: string | null | undefined): string {
+  const value = (raw || '').toUpperCase();
+  if (value.includes('MONOTRIBUTO')) return 'Responsable Monotributo';
+  if (value.includes('EXENTO')) return 'Exento';
+  if (value.includes('RESPONSABLE')) return 'Responsable Inscripto';
+  return raw || 'Exento';
+}
+
+function formatDate(value: string | undefined): string {
+  if (!value) return '';
+  const iso = value.includes('T') ? value.slice(0, 10) : value;
+  const [y, m, d] = iso.split('-');
+  if (!y || !m || !d) return iso;
+  return `${d}/${m}/${y}`;
+}
+
+function formatCaeExpiration(value: string | undefined): string {
+  if (!value) return '';
+  const digits = value.replace(/\D/g, '');
+  if (digits.length === 8) return `${digits.slice(6, 8)}/${digits.slice(4, 6)}/${digits.slice(0, 4)}`;
+  return value;
+}
+
+function buildFiscalQrData(sale: Sale, cuit: string | null | undefined): string | null {
+  const fi = sale.fiscalInvoice;
+  const cuitDigits = String(cuit || '').replace(/\D/g, '');
+  if (!fi || !cuitDigits) return null;
+
+  const data: Record<string, number | string> = {
+    ver: 1,
+    fecha: (fi.emittedAt || sale.createdAt || '').slice(0, 10),
+    cuit: Number(cuitDigits),
+    ptoVta: fi.salesPoint,
+    tipoCmp: fi.voucherType,
+    nroCmp: fi.voucherNumber,
+    importe: Number(sale.grandTotal.toFixed(2)),
     moneda: 'PES',
-    ctz: '1',
-  });
-  return `https://www.arca.gob.ar/qr?${params.toString()}`;
+    ctz: 1,
+  };
+  if (fi.docType && fi.docType !== 99 && fi.docNumber) {
+    data.tipoDocRec = fi.docType;
+    data.nroDocRec = Number(String(fi.docNumber).replace(/\D/g, ''));
+  }
+  data.tipoCodAut = 'E';
+  data.codAut = Number(fi.cae);
+
+  return `https://www.arca.gob.ar/fe/qr/?p=${btoa(JSON.stringify(data))}`;
 }
 
 export const POSTicketPrintModal: React.FC<POSTicketPrintModalProps> = ({ sale, onClose }) => {
   const { data: company } = useCompany();
+  const isFiscal = Boolean(sale?.fiscalInvoice) || Boolean(sale?.notes?.includes('CAE'));
+
+  const [arcaConfig, setArcaConfig] = React.useState<ArcaConfig | null>(null);
+  React.useEffect(() => {
+    let active = true;
+    if (!sale || !isFiscal) {
+      setArcaConfig(null);
+      return () => {
+        active = false;
+      };
+    }
+    getArcaConfig()
+      .then((config) => {
+        if (active) setArcaConfig(config);
+      })
+      .catch(() => {
+        if (active) setArcaConfig(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [sale, isFiscal]);
+
   if (!sale) return null;
 
-  const isFiscal = sale.notes?.includes('CAE') ?? false;
-  const qrData = getFiscalQrData(sale, company);
-  const ticketNote = sale.notes?.replace(/^Recargo \d+%: \$[\d.]+\.\s*/, '');
+  const cuit = arcaConfig?.cuit || company?.taxId || '';
+  const taxCondition = taxConditionLabel(arcaConfig?.emitter?.taxCondition);
+  const isMonotributo = taxCondition.toLowerCase().includes('monotributo');
+  const voucherType = sale.fiscalInvoice?.voucherType;
+  const voucherNumber = sale.fiscalInvoice?.voucherNumber;
+  const salesPoint = sale.fiscalInvoice?.salesPoint;
+  const formattedNumber = voucherNumber ? `${String(salesPoint || 1).padStart(4, '0')}-${String(voucherNumber).padStart(8, '0')}` : '';
+  const qrData = buildFiscalQrData(sale, cuit);
+  const destinatario = sale.fiscalInvoice?.docType === 99 || !sale.customerName ? 'A Consumidor Final' : sale.customerName;
+
+  const ticketNote = (sale.notes || '')
+    .replace(/Factura ARCA #\d+ emitida\. CAE: \S+/g, '')
+    .replace(/Comprobante Interno: \S+/g, '')
+    .replace(/^Recargo \d+%: \$[\d.]+\.\s*/g, '')
+    .trim();
 
   const handlePrint = () => {
     window.print();
@@ -96,34 +182,87 @@ export const POSTicketPrintModal: React.FC<POSTicketPrintModalProps> = ({ sale, 
             boxShadow: '0 4px 10px rgba(0,0,0,0.05)',
           }}
         >
+          {/* Datos del emisor */}
           <Box sx={{ textAlign: 'center', mb: 0.5 }}>
-            <img src="/logo.png" alt="logo" style={{ width: '38mm', height: '38mm', objectFit: 'contain', display: 'block', margin: '0 auto' }} />
+            <img src="/logo.png" alt="logo" style={{ width: '30mm', height: '30mm', objectFit: 'contain', display: 'block', margin: '0 auto' }} />
           </Box>
           <Typography className="ticket-company" variant="subtitle2" align="center" sx={{ fontWeight: 900, textTransform: 'uppercase' }}>
             {company?.name || 'Nexus POS'}
           </Typography>
-          <Typography className="ticket-address" variant="caption" align="center" sx={{ display: 'block' }}>
-            {company?.address || ''}
-          </Typography>
+          {company?.ownerName && (
+            <Typography className="ticket-detail" variant="caption" align="center" sx={{ display: 'block' }}>
+              Titular: {company.ownerName}
+            </Typography>
+          )}
+          {company?.address && (
+            <Typography className="ticket-address" variant="caption" align="center" sx={{ display: 'block' }}>
+              {company.address}
+            </Typography>
+          )}
           <Typography className="ticket-tax-id" variant="caption" align="center" sx={{ display: 'block' }}>
-            CUIT: {company?.taxId || ''}
+            CUIT: {cuit}
           </Typography>
-          <Typography className="ticket-phone" variant="caption" align="center" sx={{ display: 'block', mb: 1 }}>
-            Tel: {company?.phone || ''}
-          </Typography>
+          {company?.phone && (
+            <Typography className="ticket-phone" variant="caption" align="center" sx={{ display: 'block' }}>
+              Tel: {company.phone}
+            </Typography>
+          )}
+          {isFiscal && (
+            <>
+              <Typography className="ticket-detail" variant="caption" align="center" sx={{ display: 'block' }}>
+                Cond. frente al IVA: {taxCondition}
+              </Typography>
+              {isMonotributo && (
+                <Typography className="ticket-detail" variant="caption" align="center" sx={{ display: 'block' }}>
+                  Ingresos Brutos: {cuit}
+                </Typography>
+              )}
+            </>
+          )}
           <Divider className="ticket-divider" sx={{ borderStyle: 'dashed', my: 1 }} />
 
-          <Typography className="ticket-detail" variant="caption" sx={{ display: 'block' }}>
-            Ticket: {sale.ticketNumber}
-          </Typography>
-          <Typography className="ticket-detail" variant="caption" sx={{ display: 'block' }}>
-            Fecha: {new Date(sale.createdAt).toLocaleString()}
-          </Typography>
+          {/* Descripción del comprobante */}
+          {isFiscal ? (
+            <>
+              <Typography className="ticket-voucher" variant="body1" align="center" sx={{ fontWeight: 900, fontSize: '1.05rem', letterSpacing: '0.08em' }}>
+                {voucherType ? voucherLabel(voucherType).toUpperCase() : 'COMPROBANTE FISCAL'}
+              </Typography>
+              {formattedNumber && (
+                <Typography className="ticket-detail" variant="caption" align="center" sx={{ display: 'block', fontWeight: 700 }}>
+                  N° {formattedNumber}
+                </Typography>
+              )}
+              <Typography className="ticket-detail" variant="caption" sx={{ display: 'block' }}>
+                Fecha de emisión: {formatDate(sale.fiscalInvoice?.emittedAt || sale.createdAt)}
+              </Typography>
+              <Typography className="ticket-detail" variant="caption" sx={{ display: 'block' }}>
+                Destinatario: {destinatario}
+              </Typography>
+              <Typography className="ticket-detail" variant="caption" sx={{ display: 'block' }}>
+                Importe total: ${sale.grandTotal.toFixed(2)}
+              </Typography>
+              <Divider className="ticket-divider" sx={{ borderStyle: 'dashed', my: 1 }} />
+            </>
+          ) : (
+            <>
+              <Typography className="ticket-voucher" variant="body1" align="center" sx={{ fontWeight: 900, fontSize: '1rem', letterSpacing: '0.08em' }}>
+                COMPROBANTE NO FISCAL
+              </Typography>
+              <Typography className="ticket-detail" variant="caption" sx={{ display: 'block' }}>
+                Ticket: {sale.ticketNumber}
+              </Typography>
+              <Typography className="ticket-detail" variant="caption" sx={{ display: 'block' }}>
+                Fecha: {new Date(sale.createdAt).toLocaleString()}
+              </Typography>
+              <Typography className="ticket-detail" variant="caption" sx={{ display: 'block' }}>
+                Cliente: {sale.customerName}
+              </Typography>
+              <Divider className="ticket-divider" sx={{ borderStyle: 'dashed', my: 1 }} />
+            </>
+          )}
+
           <Typography className="ticket-detail" variant="caption" sx={{ display: 'block' }}>
             Atendió: {sale.userName}
-          </Typography>
-          <Typography className="ticket-detail" variant="caption" sx={{ display: 'block', mb: 1 }}>
-            Cliente: {sale.customerName}
           </Typography>
           <Divider className="ticket-divider" sx={{ borderStyle: 'dashed', my: 1 }} />
 
@@ -150,29 +289,49 @@ export const POSTicketPrintModal: React.FC<POSTicketPrintModalProps> = ({ sale, 
             <span>Subtotal:</span>
             <span>${sale.subtotal.toFixed(2)}</span>
           </Box>
-          <Box className="ticket-total-row" sx={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span>Impuestos:</span>
-            <span>${sale.taxTotal.toFixed(2)}</span>
-          </Box>
+          {sale.taxTotal > 0 && (
+            <Box className="ticket-total-row" sx={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span>Impuestos:</span>
+              <span>${sale.taxTotal.toFixed(2)}</span>
+            </Box>
+          )}
           <Box className="ticket-grand-total" sx={{ display: 'flex', justifyContent: 'space-between', fontWeight: 900, fontSize: '1.1rem', mt: 1 }}>
             <span>TOTAL:</span>
             <span>${sale.grandTotal.toFixed(2)}</span>
           </Box>
           <Divider className="ticket-divider" sx={{ borderStyle: 'dashed', my: 1 }} />
 
-          {isFiscal && qrData && (
-            <Box sx={{ textAlign: 'center', my: 1.5 }}>
-              <QRCodeSVG value={qrData} size={90} />
-              <Typography variant="caption" sx={{ display: 'block', mt: 0.5, fontWeight: 700 }}>
-                Comprobante Fiscal ARCA
+          {/* Datos fiscales */}
+          {isFiscal && (
+            <>
+              <Typography className="ticket-detail" variant="caption" sx={{ display: 'block', fontWeight: 700 }}>
+                CAE N°: {sale.fiscalInvoice?.cae || '—'}
               </Typography>
-            </Box>
+              <Typography className="ticket-detail" variant="caption" sx={{ display: 'block' }}>
+                Venc. CAE: {formatCaeExpiration(sale.fiscalInvoice?.caeExpiration) || '—'}
+              </Typography>
+              {qrData && (
+                <Box sx={{ textAlign: 'center', my: 1.5 }}>
+                  <QRCodeSVG value={qrData} size={90} />
+                  <Typography variant="caption" sx={{ display: 'block', mt: 0.5, fontWeight: 700 }}>
+                    Comprobante Autorizado - ARCA
+                  </Typography>
+                </Box>
+              )}
+              <Divider className="ticket-divider" sx={{ borderStyle: 'dashed', my: 1 }} />
+            </>
           )}
 
+          {/* Observaciones */}
           {ticketNote && (
-            <Typography className="ticket-note" variant="caption" align="center" sx={{ display: 'block', fontStyle: 'italic', my: 0.5 }}>
-              {ticketNote}
-            </Typography>
+            <Box sx={{ my: 0.5 }}>
+              <Typography className="ticket-note-label" variant="caption" align="center" sx={{ display: 'block', fontWeight: 800 }}>
+                Observaciones:
+              </Typography>
+              <Typography className="ticket-note" variant="caption" align="center" sx={{ display: 'block', fontStyle: 'italic' }}>
+                {ticketNote}
+              </Typography>
+            </Box>
           )}
 
           <Typography className="ticket-footer" variant="caption" align="center" sx={{ display: 'block', mt: 1, fontWeight: 700 }}>

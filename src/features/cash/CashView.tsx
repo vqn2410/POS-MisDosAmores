@@ -1,14 +1,22 @@
 import React from 'react';
 import {
   Box, Paper, Typography, Button, Grid, TextField, Divider, Chip, CircularProgress,
-  Table, TableHead, TableRow, TableCell, TableBody,
+  Table, TableHead, TableRow, TableCell, TableBody, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle,
 } from '@mui/material';
-import { Wallet, ArrowDownCircle, ArrowUpCircle, Lock, CheckCircle2, PlayCircle, History } from 'lucide-react';
-import { useCurrentCashSession, useOpenCashSession, useCloseCashSession, useCashMovements, useCreateCashMovement } from '../../hooks/useCashSessions';
+import { Wallet, ArrowDownCircle, ArrowUpCircle, Lock, CheckCircle2, PlayCircle, History, Undo2 } from 'lucide-react';
+import { useCurrentCashSession, useOpenCashSession, useCloseCashSession, useCashMovements, useCreateCashMovement, useCancelCashMovement } from '../../hooks/useCashSessions';
 import { useSales } from '../../hooks/useSales';
 import { useAuthStore } from '../../store/useAuthStore';
 import { CashOpeningModal } from './components/CashOpeningModal';
 import { CashMovementModal } from './components/CashMovementModal';
+import type { CashMovement } from '../../types';
+
+function formatMovementTime(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? 'Sin fecha'
+    : date.toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' });
+}
 
 export const CashView: React.FC = () => {
   const { data: session, isLoading: sessionLoading } = useCurrentCashSession();
@@ -17,36 +25,49 @@ export const CashView: React.FC = () => {
   const closeCashSession = useCloseCashSession();
   const openCashSession = useOpenCashSession();
   const createMovement = useCreateCashMovement();
+  const cancelMovement = useCancelCashMovement();
   const { user, activeBranch, setCashSession } = useAuthStore();
 
   const [showOpeningModal, setShowOpeningModal] = React.useState(false);
   const [movementType, setMovementType] = React.useState<'INCOME' | 'WITHDRAWAL'>('INCOME');
   const [showMovementModal, setShowMovementModal] = React.useState(false);
   const [closingAmount, setClosingAmount] = React.useState<string>('');
+  const [cancelTarget, setCancelTarget] = React.useState<CashMovement | null>(null);
 
   const sessionSales = sales.filter((s) => s.cashSessionId === session?.id && s.status === 'COMPLETED');
 
-  const kioskSales = sessionSales.reduce((sum, s) => {
+  const cashOf = (s: { payments?: { method: string; amount: number; change?: number }[] }) =>
+    (s.payments || [])
+      .filter((p) => p.method === 'CASH')
+      .reduce((acc, p) => acc + (p.amount - (p.change || 0)), 0);
+
+  const kioskCashSales = sessionSales.reduce((sum, s) => {
     const kioskTotal = s.items
       .filter((i) => i.product.cashBoxType === 'KIOSK' || !i.product.cashBoxType)
       .reduce((acc, i) => acc + i.total, 0);
-    return sum + kioskTotal;
+    const share = s.subtotal > 0 ? kioskTotal / s.subtotal : 0;
+    return sum + cashOf(s) * share;
   }, 0);
 
-  const cigaretteSales = sessionSales.reduce((sum, s) => {
+  const cigaretteCashSales = sessionSales.reduce((sum, s) => {
     const cigTotal = s.items
       .filter((i) => i.product.cashBoxType === 'CIGARRILLOS')
       .reduce((acc, i) => acc + i.total, 0);
-    return sum + cigTotal;
+    const share = s.subtotal > 0 ? cigTotal / s.subtotal : 0;
+    return sum + cashOf(s) * share;
   }, 0);
 
   const netIncome = movements
-    .filter((m) => m.type === 'INCOME')
+    .filter((m) => m.status !== 'CANCELLED' && m.type === 'INCOME')
     .reduce((sum, m) => sum + m.amount, 0);
 
   const netWithdrawals = movements
-    .filter((m) => m.type === 'WITHDRAWAL')
+    .filter((m) => m.status !== 'CANCELLED' && m.type === 'WITHDRAWAL')
     .reduce((sum, m) => sum + m.amount, 0);
+
+  const totalCashInDrawer = session
+    ? session.initialKioskAmount + session.initialCigaretteAmount + kioskCashSales + cigaretteCashSales + netIncome - netWithdrawals
+    : 0;
 
   const handleOpenSession = (kioskAmount: number, cigaretteAmount: number) => {
     if (!user) return;
@@ -85,8 +106,7 @@ export const CashView: React.FC = () => {
 
   const handleCloseSession = () => {
     if (!session) return;
-    const baseTotal = session.initialKioskAmount + session.initialCigaretteAmount + kioskSales + cigaretteSales;
-    const calculated = baseTotal + netIncome - netWithdrawals;
+    const calculated = totalCashInDrawer;
     closeCashSession.mutate({
       id: session.id,
       data: {
@@ -96,6 +116,21 @@ export const CashView: React.FC = () => {
         calculatedTotal: calculated,
         difference: (parseFloat(closingAmount) || 0) - calculated,
       },
+    });
+  };
+
+  const handleCancelMovement = () => {
+    if (!cancelTarget || !user) return;
+    cancelMovement.mutate({
+      id: cancelTarget.id,
+      data: {
+        status: 'CANCELLED',
+        cancelledAt: new Date().toISOString(),
+        cancelledByUserId: user.id,
+        cancelledByUserName: user.fullName,
+      },
+    }, {
+      onSuccess: () => setCancelTarget(null),
     });
   };
 
@@ -192,7 +227,7 @@ export const CashView: React.FC = () => {
             <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1.5 }}>
               <Typography variant="body1" sx={{ fontWeight: 600, color: '#475569' }}>Hora de apertura:</Typography>
               <Typography variant="body1" sx={{ fontWeight: 800, color: '#0F172A' }}>
-                {new Date(session.openedAt).toLocaleTimeString()}
+                {formatMovementTime(session.openedAt)}
               </Typography>
             </Box>
 
@@ -216,13 +251,13 @@ export const CashView: React.FC = () => {
                 <Typography variant="body2" sx={{ fontWeight: 800, color: '#0F172A' }}>${session.initialKioskAmount.toFixed(2)}</Typography>
               </Box>
               <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography variant="body2" sx={{ fontWeight: 600, color: '#475569' }}>Ventas del turno:</Typography>
-                <Typography variant="body2" sx={{ fontWeight: 800, color: '#16A34A' }}>+${kioskSales.toFixed(2)}</Typography>
+                <Typography variant="body2" sx={{ fontWeight: 600, color: '#475569' }}>Ventas en efectivo del turno:</Typography>
+                <Typography variant="body2" sx={{ fontWeight: 800, color: '#16A34A' }}>+${kioskCashSales.toFixed(2)}</Typography>
               </Box>
               <Divider sx={{ my: 1, borderColor: '#BFDBFE' }} />
               <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                 <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#1E40AF' }}>Total esperado:</Typography>
-                <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#1E40AF' }}>${(session.initialKioskAmount + kioskSales).toFixed(2)}</Typography>
+                <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#1E40AF' }}>${(session.initialKioskAmount + kioskCashSales).toFixed(2)}</Typography>
               </Box>
             </Box>
 
@@ -239,13 +274,13 @@ export const CashView: React.FC = () => {
                 <Typography variant="body2" sx={{ fontWeight: 800, color: '#0F172A' }}>${session.initialCigaretteAmount.toFixed(2)}</Typography>
               </Box>
               <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography variant="body2" sx={{ fontWeight: 600, color: '#475569' }}>Ventas del turno:</Typography>
-                <Typography variant="body2" sx={{ fontWeight: 800, color: '#16A34A' }}>+${cigaretteSales.toFixed(2)}</Typography>
+                <Typography variant="body2" sx={{ fontWeight: 600, color: '#475569' }}>Ventas en efectivo del turno:</Typography>
+                <Typography variant="body2" sx={{ fontWeight: 800, color: '#16A34A' }}>+${cigaretteCashSales.toFixed(2)}</Typography>
               </Box>
               <Divider sx={{ my: 1, borderColor: '#FED7AA' }} />
               <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                 <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#9A3412' }}>Total esperado:</Typography>
-                <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#9A3412' }}>${(session.initialCigaretteAmount + cigaretteSales).toFixed(2)}</Typography>
+                <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#9A3412' }}>${(session.initialCigaretteAmount + cigaretteCashSales).toFixed(2)}</Typography>
               </Box>
             </Box>
 
@@ -254,7 +289,7 @@ export const CashView: React.FC = () => {
                 EFECTIVO TOTAL ESPERADO EN CAJA:
               </Typography>
               <Typography variant="h3" sx={{ fontWeight: 900, color: '#15803D', fontSize: '2.5rem', mt: 0.5 }}>
-                ${(session.initialKioskAmount + session.initialCigaretteAmount + kioskSales + cigaretteSales + netIncome - netWithdrawals).toFixed(2)}
+                ${totalCashInDrawer.toFixed(2)}
               </Typography>
             </Box>
           </Paper>
@@ -342,37 +377,59 @@ export const CashView: React.FC = () => {
                   <TableCell sx={{ fontWeight: 800 }}>Monto</TableCell>
                   <TableCell sx={{ fontWeight: 800 }}>Motivo</TableCell>
                   <TableCell sx={{ fontWeight: 800 }}>Registró</TableCell>
-                  <TableCell sx={{ fontWeight: 800 }}>Hora</TableCell>
+                  <TableCell sx={{ fontWeight: 800 }}>Fecha y hora</TableCell>
+                  <TableCell sx={{ fontWeight: 800 }}>Acciones</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {movements.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} align="center" sx={{ py: 3 }}>
+                    <TableCell colSpan={6} align="center" sx={{ py: 3 }}>
                       <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
                         Sin movimientos registrados
                       </Typography>
                     </TableCell>
                   </TableRow>
                 ) : (
-                  movements.map((m) => (
-                    <TableRow key={m.id} hover>
-                      <TableCell>
-                        <Chip
-                          label={m.type === 'INCOME' ? 'Ingreso' : 'Retiro'}
-                          color={m.type === 'INCOME' ? 'primary' : 'warning'}
-                          size="small"
-                          sx={{ fontWeight: 800, minWidth: 80 }}
-                        />
-                      </TableCell>
-                      <TableCell sx={{ fontWeight: 900, color: m.type === 'INCOME' ? '#16A34A' : '#DC2626' }}>
-                        {m.type === 'INCOME' ? '+' : '-'}${m.amount.toFixed(2)}
-                      </TableCell>
-                      <TableCell sx={{ fontWeight: 700 }}>{m.reason}</TableCell>
-                      <TableCell sx={{ fontWeight: 600 }}>{m.userName}</TableCell>
-                      <TableCell sx={{ fontWeight: 600 }}>{new Date(m.createdAt).toLocaleTimeString()}</TableCell>
-                    </TableRow>
-                  ))
+                  movements.map((m) => {
+                    const cancelled = m.status === 'CANCELLED';
+                    return (
+                      <TableRow key={m.id} hover sx={cancelled ? { bgcolor: '#F1F5F9' } : undefined}>
+                        <TableCell>
+                          <Chip
+                            label={cancelled ? 'Anulado' : m.type === 'INCOME' ? 'Ingreso' : 'Retiro'}
+                            color={cancelled ? 'default' : m.type === 'INCOME' ? 'primary' : 'warning'}
+                            size="small"
+                            sx={{ fontWeight: 800, minWidth: 80 }}
+                          />
+                        </TableCell>
+                        <TableCell sx={{ fontWeight: 900, color: m.type === 'INCOME' ? '#16A34A' : '#DC2626', textDecoration: cancelled ? 'line-through' : 'none' }}>
+                          {m.type === 'INCOME' ? '+' : '-'}${m.amount.toFixed(2)}
+                        </TableCell>
+                        <TableCell sx={{ fontWeight: 700 }}>{m.reason}</TableCell>
+                        <TableCell sx={{ fontWeight: 600 }}>{m.userName}</TableCell>
+                        <TableCell sx={{ fontWeight: 600 }}>{formatMovementTime(m.createdAt)}</TableCell>
+                        <TableCell>
+                          {cancelled ? (
+                            <Typography variant="caption" sx={{ fontWeight: 700, color: '#94A3B8' }}>
+                              {m.cancelledByUserName ? `por ${m.cancelledByUserName}` : 'Anulado'}
+                            </Typography>
+                          ) : (
+                            <Button
+                              size="small"
+                              color="error"
+                              variant="text"
+                              startIcon={<Undo2 size={16} />}
+                              onClick={() => setCancelTarget(m)}
+                              sx={{ fontWeight: 800, textTransform: 'none' }}
+                            >
+                              Anular
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
                 )}
               </TableBody>
             </Table>
@@ -387,6 +444,34 @@ export const CashView: React.FC = () => {
         onConfirm={handleMovement}
         isPending={createMovement.isPending}
       />
+
+      <Dialog
+        open={Boolean(cancelTarget)}
+        onClose={() => setCancelTarget(null)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontWeight: 900 }}>Anular movimiento</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            ¿Seguro que deseas anular el movimiento de {cancelTarget ? `$${cancelTarget.amount.toFixed(2)}` : ''} por "{cancelTarget?.reason}"? Este importe dejará de tenerse en cuenta en el arqueo.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button variant="outlined" onClick={() => setCancelTarget(null)} sx={{ borderRadius: 3, fontWeight: 700 }}>
+            Cancelar
+          </Button>
+          <Button
+            variant="contained"
+            color="error"
+            onClick={handleCancelMovement}
+            disabled={cancelMovement.isPending}
+            sx={{ borderRadius: 3, fontWeight: 800 }}
+          >
+            {cancelMovement.isPending ? 'Anulando...' : 'Anular'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

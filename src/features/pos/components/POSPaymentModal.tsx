@@ -40,6 +40,11 @@ import { CuentaDniLogo } from '../../../components/common/CuentaDniLogo';
 import { calculateCartTotals } from '../utils/calculateCartTotals';
 import { createMercadoPagoQr, cancelMercadoPagoQr, getMercadoPagoQrStatus, getMercadoPagoStaticQr } from '../../../services/mercadoPagoQrApi';
 
+const computeSurcharge = (amount: number, ratePercent: number) => {
+  const rate = ratePercent / 100;
+  return Math.round(amount * (rate / (1 + rate)) * 100) / 100;
+};
+
 interface POSPaymentModalProps {
   onPrintTicket: (sale: Sale) => void;
 }
@@ -79,15 +84,18 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
 
   const { grandTotal } = calculateCartTotals(cart, discountGlobal);
   const totalPaid = payments.reduce((acc, p) => acc + p.amount, 0);
-  const pendingAmount = Math.max(0, grandTotal - totalPaid);
+  const surchargeAmount = payments.reduce((acc, p) => acc + (p.surchargeAmount || 0), 0);
+  const basePaid = payments.reduce((acc, p) => acc + (p.amount - (p.surchargeAmount || 0)), 0);
+  const pendingBase = Math.max(0, grandTotal - basePaid);
   const hasSurcharge = selectedMethod === 'CARD' || selectedMethod === 'MERCADOPAGO' || selectedMethod === 'CUENTA_DNI';
   const surchargePercent = selectedMethod === 'MERCADOPAGO' ? 5 : selectedMethod === 'CARD' ? (cardType === 'CREDIT' ? 10 : 5) : cdniPercent;
-  const surchargeAmount = hasSurcharge ? pendingAmount * (surchargePercent / 100) : 0;
+  const pendingSurcharge = hasSurcharge ? pendingBase * (surchargePercent / 100) : 0;
   const checkoutTotal = grandTotal + surchargeAmount;
+  const totalToCollect = checkoutTotal + pendingSurcharge;
   const change = Math.max(0, totalPaid - checkoutTotal);
   const enteredAmount = Number(payAmount.replace(',', '.')) || 0;
   const changePreview = selectedMethod === 'CASH' ? Math.max(0, totalPaid + enteredAmount - checkoutTotal) : change;
-  const amountForMethod = pendingAmount + surchargeAmount;
+  const amountForMethod = pendingBase + pendingSurcharge;
 
   React.useEffect(() => {
     if (isPaymentModalOpen) {
@@ -156,7 +164,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
           mpPendingRef.current = false;
           setMpTxId(payment.paymentId);
           setMpStatus('APPROVED');
-          addPayment({ method: 'QR', amount: mpAmount, reference: payment.paymentId, change: 0 });
+          addPayment({ method: 'QR', amount: mpAmount, reference: payment.paymentId, change: 0, surchargeAmount: computeSurcharge(mpAmount, 5) });
           addNotification({ title: 'Mercado Pago aprobado', message: `Transacción confirmada: ${payment.paymentId}`, type: 'success' });
         } else if (payment.status === 'rejected' || payment.status === 'cancelled') {
           setMpError(payment.detail || 'El pago fue rechazado o cancelado.');
@@ -208,7 +216,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
     mpPendingRef.current = false;
     setMpTxId('MANUAL');
     setMpStatus('APPROVED');
-    addPayment({ method: 'QR', amount: mpAmount, reference: `MANUAL-${Date.now()}`, change: 0 });
+    addPayment({ method: 'QR', amount: mpAmount, reference: `MANUAL-${Date.now()}`, change: 0, surchargeAmount: computeSurcharge(mpAmount, 5) });
     addNotification({ title: 'Pago validado manualmente', message: `Se asoció el pago manual de $${mpAmount.toFixed(2)} al ticket.`, type: 'success' });
     setManualValidateOpen(false);
     void cancelMercadoPagoQr().catch(() => undefined);
@@ -218,7 +226,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
     setSelectedMethod(method);
     const methodHasSurcharge = method === 'CARD' || method === 'MERCADOPAGO' || method === 'CUENTA_DNI';
     const percent = method === 'MERCADOPAGO' ? 5 : method === 'CARD' ? (cardType === 'CREDIT' ? 10 : 5) : cdniPercent;
-    const amount = pendingAmount * (methodHasSurcharge ? 1 + percent / 100 : 1);
+    const amount = pendingBase * (methodHasSurcharge ? 1 + percent / 100 : 1);
     setPayAmount(method === 'MERCADOPAGO' || method === 'CUENTA_DNI' ? '' : amount.toFixed(2));
 
     if (method === 'MERCADOPAGO') {
@@ -250,7 +258,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
   const handleCardTypeChange = (type: 'DEBIT' | 'CREDIT') => {
     setCardType(type);
     if (selectedMethod === 'CARD') {
-      setPayAmount((pendingAmount * (1 + (type === 'CREDIT' ? 10 : 5) / 100)).toFixed(2));
+      setPayAmount((pendingBase * (1 + (type === 'CREDIT' ? 10 : 5) / 100)).toFixed(2));
     }
   };
 
@@ -281,6 +289,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
       amount: amt,
       reference: `CDNI-${confirmed.referenceNumber}`,
       change: 0,
+      surchargeAmount: computeSurcharge(amt, cdniPercent),
     });
 
     addNotification({
@@ -294,11 +303,17 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
     const amt = parseFloat(payAmount);
     if (isNaN(amt) || amt <= 0) return;
 
+    const cardRate = cardType === 'CREDIT' ? 10 : 5;
+    const paymentSurcharge = selectedMethod === 'CARD'
+      ? Math.min(computeSurcharge(amt, cardRate), pendingBase * (cardRate / 100))
+      : 0;
+
     addPayment({
       method: selectedMethod === 'MERCADOPAGO' || selectedMethod === 'CUENTA_DNI' ? 'QR' : (selectedMethod as PaymentMethodType),
       amount: amt,
       reference: selectedMethod === 'MERCADOPAGO' ? mpTxId || undefined : cdniPayment?.referenceNumber || undefined,
       change: selectedMethod === 'CASH' && amt > checkoutTotal - totalPaid ? amt - (checkoutTotal - totalPaid) : 0,
+      surchargeAmount: paymentSurcharge,
     });
     setPayAmount('');
   };
@@ -385,7 +400,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
     <Dialog open={isPaymentModalOpen} onClose={closePaymentModal} maxWidth="md" fullWidth slotProps={{ paper: { sx: { borderRadius: 4, p: 1, bgcolor: '#FFFFFF', color: '#0F172A', border: '2px solid #E2E8F0' } } }}>
       <DialogTitle sx={{ fontWeight: 900, fontSize: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#0F172A' }}>
         <span>💳 Procesar Cobro (Pago Mixto / Múltiples Medios)</span>
-         <Chip label={`TOTAL: $${checkoutTotal.toFixed(2)}`} color="primary" sx={{ fontSize: '1.55rem', fontWeight: 900, py: 3, px: 1.5, borderRadius: 3, bgcolor: '#2563EB', color: '#FFFFFF' }} />
+         <Chip label={`TOTAL: $${totalToCollect.toFixed(2)}`} color="primary" sx={{ fontSize: '1.55rem', fontWeight: 900, py: 3, px: 1.5, borderRadius: 3, bgcolor: '#2563EB', color: '#FFFFFF' }} />
       </DialogTitle>
       <Divider sx={{ borderColor: '#E2E8F0' }} />
 
@@ -586,7 +601,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
                       {[5, 6, 7, 8, 9, 10].map((percent) => <MenuItem key={percent} value={percent}>{percent}%</MenuItem>)}
                     </TextField>
                   )}
-                  <Typography sx={{ fontWeight: 900, color: '#9A3412' }}>+${surchargeAmount.toFixed(2)}</Typography>
+                  <Typography sx={{ fontWeight: 900, color: '#9A3412' }}>+${pendingSurcharge.toFixed(2)}</Typography>
                 </Box>
               </Paper>
             )}

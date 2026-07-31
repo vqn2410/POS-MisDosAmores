@@ -25,7 +25,7 @@ import { useNotificationStore } from '../../store/useNotificationStore';
 import type { Sale, FiscalInvoice } from '../../types';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 
-const CREDIT_NOTE_TYPES: Record<number, number> = { 1: 3, 3: 1, 6: 8, 8: 6, 11: 13, 13: 11, 2: 5, 5: 2 };
+const CREDIT_NOTE_TYPES: Record<number, number> = { 1: 3, 3: 1, 6: 8, 8: 6, 11: 13, 13: 11, 2: 5, 5: 2, 109: 110, 110: 109 };
 
 function formatIssuedAt(value: unknown): string {
   const firestoreTimestamp = value as { toDate?: () => Date } | null;
@@ -44,6 +44,7 @@ export const BillingView: React.FC = () => {
   const updateProduct = useUpdateProduct();
 
   const [cancelTargetId, setCancelTargetId] = React.useState<string | null>(null);
+  const [invoiceTargetId, setInvoiceTargetId] = React.useState<string | null>(null);
   const [printSale, setPrintSale] = React.useState<Sale | null>(null);
 
   const statusLabel = (s: typeof sales[0]): string => {
@@ -134,6 +135,61 @@ export const BillingView: React.FC = () => {
         },
       },
     );
+  };
+
+  const handleEmitInvoice = async () => {
+    const sale = sales.find((s) => s.id === invoiceTargetId);
+    if (!sale) return;
+
+    try {
+      const { fiscalResult } = await createArcaInvoice({
+        concept: 1,
+        docType: 99,
+        docNumber: '00000000',
+        condicionIvaId: 5,
+        subtotal: sale.grandTotal,
+        taxTotal: 0,
+        grandTotal: sale.grandTotal,
+      });
+
+      const invoice: FiscalInvoice = {
+        cae: fiscalResult.cae,
+        caeExpiration: fiscalResult.caeExpiration,
+        voucherType: fiscalResult.voucherType,
+        voucherNumber: fiscalResult.voucherNumber,
+        salesPoint: fiscalResult.salesPoint,
+        emittedAt: new Date().toISOString(),
+        status: fiscalResult.result,
+        docType: 99,
+        docNumber: '00000000',
+        observations: fiscalResult.observations,
+      };
+
+      updateSale.mutate(
+        { id: sale.id, data: { fiscalInvoice: invoice, notes: `${sale.notes ? `${sale.notes} | ` : ''}Factura ARCA #${fiscalResult.voucherNumber} emitida. CAE: ${fiscalResult.cae}` } },
+        {
+          onSuccess: () => {
+            addNotification({
+              title: 'Factura ARCA emitida',
+              message: `Venta #${sale.ticketNumber} facturada. CAE: ${fiscalResult.cae}`,
+              type: 'success',
+            });
+            setInvoiceTargetId(null);
+          },
+        },
+      );
+    } catch (err) {
+      addNotification({
+        title: 'No se pudo emitir la factura ARCA',
+        message: err instanceof Error ? err.message : String(err),
+        type: 'error',
+      });
+    }
+  };
+
+  const needsInvoice = (id: string): boolean => {
+    const s = sales.find((x) => x.id === id);
+    return !!s && s.status === 'COMPLETED' && !s.fiscalInvoice && s.payments?.some((p) => p.method === 'QR' || p.method === 'CARD');
   };
 
   const comprobantes = sales.map((s) => ({
@@ -242,6 +298,18 @@ export const BillingView: React.FC = () => {
                       >
                         Imprimir
                       </Button>
+                      {needsInvoice(c.id) && (
+                        <Button
+                          size="small"
+                          variant="contained"
+                          color="primary"
+                          startIcon={<Receipt size={16} />}
+                          onClick={() => setInvoiceTargetId(c.id)}
+                          sx={{ borderRadius: 2.5, fontWeight: 800, minHeight: 36 }}
+                        >
+                          Facturar
+                        </Button>
+                      )}
                       {c.rawStatus === 'COMPLETED' && (
                         <Button
                           size="small"
@@ -290,6 +358,28 @@ export const BillingView: React.FC = () => {
             sx={{ borderRadius: 3, fontWeight: 900 }}
           >
             {updateSale.isPending ? <CircularProgress size={20} /> : 'Sí, anular'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog open={!!invoiceTargetId} onClose={() => setInvoiceTargetId(null)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontWeight: 900 }}>¿Emitir factura ARCA?</DialogTitle>
+        <DialogContent>
+          <Typography variant="body1" sx={{ fontWeight: 600, color: '#475569' }}>
+            Se emitirá un comprobante electrónico a consumidor final por el total de la venta y quedará vinculado a este ticket. Esta acción no se puede deshacer.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, gap: 1 }}>
+          <Button onClick={() => setInvoiceTargetId(null)} variant="outlined" sx={{ borderRadius: 3, fontWeight: 800 }}>
+            Cancelar
+          </Button>
+          <Button
+            onClick={handleEmitInvoice}
+            variant="contained"
+            color="primary"
+            disabled={updateSale.isPending}
+            sx={{ borderRadius: 3, fontWeight: 900 }}
+          >
+            {updateSale.isPending ? <CircularProgress size={20} /> : 'Emitir factura'}
           </Button>
         </DialogActions>
       </Dialog>

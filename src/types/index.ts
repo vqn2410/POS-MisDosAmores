@@ -18,6 +18,7 @@ export interface User {
 export interface Company {
   id: string;
   name: string;
+  ownerName?: string;
   taxId: string; // RFC/RUT/NIT
   logoUrl?: string;
   currencySymbol: string;
@@ -124,6 +125,7 @@ export interface SalePayment {
   amount: number;
   reference?: string;
   change?: number;
+  surchargeAmount?: number;
 }
 
 export type SaleStatus = 'COMPLETED' | 'HOLD' | 'CANCELLED' | 'REFUNDED';
@@ -150,6 +152,10 @@ export interface CashMovement {
   userId: string;
   userName: string;
   createdAt: string;
+  status?: 'ACTIVE' | 'CANCELLED';
+  cancelledAt?: string;
+  cancelledByUserId?: string;
+  cancelledByUserName?: string;
 }
 
 export interface Sale {

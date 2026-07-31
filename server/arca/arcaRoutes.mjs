@@ -34,8 +34,9 @@ function resolveVoucherType(payload, config) {
   const given = Number(payload.voucherType || 0);
   if (Number.isInteger(given) && given > 0) return given;
   const hasTaxId = Number(payload.docType) !== 99 && Number(payload.docNumber || 0) > 0;
-  const taxCondition = String(config.emitterTaxCondition || '').toUpperCase();
-  if (taxCondition.includes('RESPONSABLE')) return hasTaxId ? 1 : 6;
+  const taxCondition = String(config.emitterTaxCondition || '').toUpperCase().replace(/[\s_]/g, '');
+  if (taxCondition.includes('RESPONSABLEINSCRIPTO')) return hasTaxId ? 1 : 6;
+  if (taxCondition.includes('MONOTRIBUTO')) return hasTaxId ? 11 : 109;
   return 11;
 }
 

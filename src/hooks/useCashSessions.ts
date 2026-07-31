@@ -53,3 +53,11 @@ export function useCreateCashMovement() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['cash_movements'] }),
   });
 }
+
+export function useCancelCashMovement() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<CashMovement> }) => fs.update<CashMovement>(MOV_COL, id, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['cash_movements'] }),
+  });
+}

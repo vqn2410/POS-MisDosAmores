@@ -18,6 +18,7 @@ export const SettingsView: React.FC = () => {
       id: company.id,
       data: {
         name: company.name,
+        ownerName: company.ownerName,
         taxId: company.taxId,
         address: company.address,
         phone: company.phone,
@@ -75,6 +76,14 @@ export const SettingsView: React.FC = () => {
                 label="Nombre o Razón Social"
                 value={company.name}
                 onChange={(e) => setCompany({ ...company, name: e.target.value })}
+                slotProps={{ input: { sx: { height: 48, fontSize: '1rem', fontWeight: 600 } } }}
+              />
+
+              <TextField
+                fullWidth
+                label="Titular / Representante Legal"
+                value={company.ownerName || ''}
+                onChange={(e) => setCompany({ ...company, ownerName: e.target.value })}
                 slotProps={{ input: { sx: { height: 48, fontSize: '1rem', fontWeight: 600 } } }}
               />
 
