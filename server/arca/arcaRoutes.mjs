@@ -36,7 +36,7 @@ function resolveVoucherType(payload, config) {
   const hasTaxId = Number(payload.docType) !== 99 && Number(payload.docNumber || 0) > 0;
   const taxCondition = String(config.emitterTaxCondition || '').toUpperCase().replace(/[\s_]/g, '');
   if (taxCondition.includes('RESPONSABLEINSCRIPTO')) return hasTaxId ? 1 : 6;
-  if (taxCondition.includes('MONOTRIBUTO')) return hasTaxId ? 11 : 109;
+  if (taxCondition.includes('MONOTRIBUTO')) return 11;
   return 11;
 }
 
