@@ -323,7 +323,7 @@ export const POSTicketPrintModal: React.FC<POSTicketPrintModalProps> = ({ sale, 
               </Typography>
               {qrData && (
                 <Box sx={{ textAlign: 'center', my: 1.5 }}>
-                  <QRCodeSVG value={qrData} size={90} />
+                  <QRCodeSVG value={qrData} size={140} />
                   <Typography variant="caption" sx={{ display: 'block', mt: 0.5, fontWeight: 700 }}>
                     Comprobante Autorizado - ARCA
                   </Typography>
