@@ -333,6 +333,12 @@ export const POSTicketPrintModal: React.FC<POSTicketPrintModalProps> = ({ sale, 
             <span>TOTAL:</span>
             <span>${sale.grandTotal.toFixed(2)}</span>
           </Box>
+          {sale.payments && sale.payments.reduce((sum, p) => sum + (p.method === 'CASH' ? p.change || 0 : 0), 0) > 0 && (
+            <Box className="ticket-total-row" sx={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700 }}>
+              <span>Vuelto:</span>
+              <span>${sale.payments.reduce((sum, p) => sum + (p.method === 'CASH' ? p.change || 0 : 0), 0).toFixed(2)}</span>
+            </Box>
+          )}
           <Divider className="ticket-divider" sx={{ borderStyle: 'dashed', my: 1 }} />
 
           {/* Datos fiscales */}

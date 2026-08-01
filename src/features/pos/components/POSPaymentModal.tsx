@@ -723,6 +723,21 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
               </Paper>
             )}
 
+            {/* Tarjeta: monto a ingresar en el lector de Mercado Pago */}
+            {selectedMethod === 'CARD' && (
+              <Paper elevation={0} sx={{ p: 2.5, mb: 2, borderRadius: 3.5, bgcolor: '#EFF6FF', border: '2px solid #BFDBFE', textAlign: 'center' }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 900, color: '#1E40AF', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  💳 Ingresá este monto en el lector de Mercado Pago
+                </Typography>
+                <Typography variant="h2" sx={{ fontWeight: 900, color: '#1D4ED8', fontSize: '3.2rem', lineHeight: 1.2, my: 1 }}>
+                  ${amountForMethod.toFixed(2)}
+                </Typography>
+                <Typography variant="body2" sx={{ fontWeight: 800, color: '#64748B' }}>
+                  Incluye recargo de {cardType === 'CREDIT' ? 'crédito (10%)' : 'débito (5%)'}.
+                </Typography>
+              </Paper>
+            )}
+
             {/* Standard manual payment amount field */}
             {selectedMethod !== 'MERCADOPAGO' && selectedMethod !== 'CUENTA_DNI' && (
               <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center', mb: 2 }}>
@@ -746,7 +761,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
                   slotProps={{
                     input: {
                       startAdornment: <Typography sx={{ mr: 1, fontWeight: 900, fontSize: '1.25rem', color: '#0F172A' }}>$</Typography>,
-                      sx: { borderRadius: 3, fontSize: '1.3rem', fontWeight: 900, height: 52, bgcolor: '#FFFFFF', color: '#0F172A' },
+                      sx: { borderRadius: 3, fontSize: '1.6rem', fontWeight: 900, height: 60, bgcolor: '#FFFFFF', color: '#0F172A' },
                     },
                     inputLabel: { sx: { fontWeight: 700, color: '#475569' } },
                   }}
