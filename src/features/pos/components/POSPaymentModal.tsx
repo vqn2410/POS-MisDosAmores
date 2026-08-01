@@ -278,6 +278,28 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
     void cancelMercadoPagoPointOrder(id).catch(() => undefined);
   };
 
+  const handleClosePaymentModal = () => {
+    if (pointPendingRef.current && pointOrderId) {
+      void cancelMercadoPagoPointOrder(pointOrderId).catch(() => undefined);
+    }
+    pointPendingRef.current = false;
+    pointAddedRef.current = false;
+    setPointStatus('IDLE');
+    setPointOrderId(null);
+    setPointDeviceName(null);
+    setPointError('');
+    if (mpPendingRef.current) {
+      void cancelMercadoPagoQr().catch(() => undefined);
+      mpPendingRef.current = false;
+    }
+    mpRequestRef.current += 1;
+    setMpStatus('IDLE');
+    setMpReference(null);
+    setMpQrData(null);
+    setMpError('');
+    closePaymentModal();
+  };
+
   React.useEffect(() => {
     if (!isPaymentModalOpen || selectedMethod !== 'CARD' || pointStatus !== 'WAITING' || !pointOrderId) return;
     let active = true;
@@ -498,7 +520,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
 
   return (
     <>
-    <Dialog open={isPaymentModalOpen} onClose={closePaymentModal} fullScreen slotProps={{ paper: { sx: { bgcolor: '#F8FAFC', color: '#0F172A' } } }}>
+    <Dialog open={isPaymentModalOpen} onClose={handleClosePaymentModal} fullScreen slotProps={{ paper: { sx: { bgcolor: '#F8FAFC', color: '#0F172A' } } }}>
       <DialogTitle sx={{ fontWeight: 900, fontSize: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#0F172A', px: 3, py: 2, bgcolor: '#FFFFFF', borderBottom: '1px solid #E2E8F0' }}>
         <span>💳 Procesar Cobro (Pago Mixto / Múltiples Medios)</span>
          <Chip label={`TOTAL: $${totalToCollect.toFixed(2)}`} color="primary" sx={{ fontSize: '1.55rem', fontWeight: 900, py: 3, px: 1.5, borderRadius: 3, bgcolor: '#2563EB', color: '#FFFFFF' }} />
@@ -993,7 +1015,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
       </DialogContent>
 
       <DialogActions sx={{ p: 2.5, justifyContent: 'space-between' }}>
-        <Button onClick={closePaymentModal} variant="outlined" sx={{ borderRadius: 3, minHeight: 48, px: 3, fontWeight: 800, color: '#475569', borderColor: '#CBD5E1' }}>
+        <Button onClick={handleClosePaymentModal} variant="outlined" sx={{ borderRadius: 3, minHeight: 48, px: 3, fontWeight: 800, color: '#475569', borderColor: '#CBD5E1' }}>
           Cancelar
         </Button>
         <Button
