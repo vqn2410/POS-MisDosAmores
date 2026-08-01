@@ -200,6 +200,7 @@ export const BillingView: React.FC = () => {
     total: s.grandTotal,
     type: s.notes?.includes('CAE') ? ('ARCA' as const) : ('INTERNO' as const),
     cae: s.notes?.includes('CAE') ? s.notes.match(/CAE: (\S+)/)?.[1] || '' : '',
+    voucherNumber: s.fiscalInvoice?.voucherNumber ?? (Number(s.notes?.match(/Factura ARCA #(\d+)/)?.[1] || 0) || null),
     status: statusLabel(s),
     rawStatus: s.status,
     createdAt: s.createdAt,
@@ -241,8 +242,9 @@ export const BillingView: React.FC = () => {
                <TableCell sx={{ fontWeight: 800, fontSize: '1rem' }}>Ticket</TableCell>
                <TableCell sx={{ fontWeight: 800, fontSize: '1rem' }}>Fecha y hora de emisión</TableCell>
                <TableCell sx={{ fontWeight: 800, fontSize: '1rem' }}>Cliente</TableCell>
-              <TableCell sx={{ fontWeight: 800, fontSize: '1rem' }}>Tipo</TableCell>
-              <TableCell sx={{ fontWeight: 800, fontSize: '1rem' }}>Monto</TableCell>
+               <TableCell sx={{ fontWeight: 800, fontSize: '1rem' }}>Tipo</TableCell>
+               <TableCell sx={{ fontWeight: 800, fontSize: '1rem' }}>N° AFIP</TableCell>
+               <TableCell sx={{ fontWeight: 800, fontSize: '1rem' }}>Monto</TableCell>
               <TableCell sx={{ fontWeight: 800, fontSize: '1rem' }}>Estado</TableCell>
               <TableCell sx={{ fontWeight: 800, fontSize: '1rem' }}>CAE / UUID</TableCell>
               <TableCell align="right" sx={{ fontWeight: 800, fontSize: '1rem' }}>Acción</TableCell>
@@ -251,7 +253,7 @@ export const BillingView: React.FC = () => {
           <TableBody>
             {comprobantes.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} align="center" sx={{ py: 4 }}>
+                <TableCell colSpan={9} align="center" sx={{ py: 4 }}>
                   <Typography variant="body1" color="text.secondary" sx={{ fontWeight: 600 }}>
                     No hay comprobantes emitidos aún.
                   </Typography>
@@ -273,6 +275,11 @@ export const BillingView: React.FC = () => {
                     ) : (
                       <Chip label="Interno" variant="outlined" color="default" size="small" sx={{ fontWeight: 800, borderRadius: 2, borderColor: '#94A3B8', color: '#475569' }} />
                     )}
+                  </TableCell>
+                  <TableCell>
+                    <Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 800, color: '#0F172A' }}>
+                      {c.voucherNumber ? String(c.voucherNumber).padStart(8, '0') : '—'}
+                    </Typography>
                   </TableCell>
                   <TableCell sx={{ fontWeight: 900, color: '#2563EB', fontSize: '1.15rem' }}>${c.total.toFixed(2)}</TableCell>
                   <TableCell>
