@@ -23,6 +23,7 @@ async function readJson(request) {
 
 const productionAccessToken = process.env.MP_PRODUCTION_ACCESS_TOKEN;
 const productionExternalPosId = process.env.MP_PRODUCTION_EXTERNAL_POS_ID;
+const productionPointDeviceId = process.env.MP_PRODUCTION_POINT_DEVICE_ID;
 let productionCollectorId = process.env.MP_PRODUCTION_COLLECTOR_ID ? Number(process.env.MP_PRODUCTION_COLLECTOR_ID) : undefined;
 const notificationUrl = process.env.MP_NOTIFICATION_URL;
 
@@ -164,6 +165,73 @@ async function getPaymentStatus(externalReference) {
   };
 }
 
+async function listPointDevices() {
+  if (!productionAccessToken) throw new Error('Falta MP_PRODUCTION_ACCESS_TOKEN en las variables de entorno.');
+  const devices = await mercadoPagoRequest('/point/integration-api/devices', {}, productionAccessToken);
+  const list = devices?.results || devices || [];
+  if (!Array.isArray(list)) return [];
+  return list.map((device) => ({
+    deviceId: device.id,
+    name: device.name || device.id,
+    operatingMode: device.operating_mode || null,
+  }));
+}
+
+async function resolvePointDeviceId() {
+  if (productionPointDeviceId) return productionPointDeviceId;
+  const devices = await listPointDevices();
+  if (devices.length === 0) throw new Error('No hay dispositivos Point vinculados a esta cuenta de Mercado Pago.');
+  if (devices.length > 1) throw new Error('Hay varios dispositivos Point. Configurá MP_PRODUCTION_POINT_DEVICE_ID en las variables de entorno.');
+  return devices[0].deviceId;
+}
+
+async function createPointPaymentIntent(data) {
+  const amount = Number(data.amount);
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error('El monto del cobro debe ser mayor a cero.');
+  if (!data.description) throw new Error('Falta la descripción del cobro con Point.');
+  if (!productionAccessToken) throw new Error('Falta MP_PRODUCTION_ACCESS_TOKEN en las variables de entorno.');
+  const deviceId = await resolvePointDeviceId();
+  const intent = await mercadoPagoRequest(`/point/integration-api/devices/${encodeURIComponent(deviceId)}/payment-intents`, {
+    method: 'POST',
+    body: JSON.stringify({
+      amount,
+      description: data.description,
+      additional_info: data.externalReference ? { external_reference: data.externalReference } : undefined,
+      mode: 'DEFAULT',
+    }),
+  }, productionAccessToken);
+  return { paymentIntentId: intent.id, status: intent.status, deviceId };
+}
+
+async function getPointPaymentIntentStatus(paymentIntentId) {
+  if (!productionAccessToken) throw new Error('Falta MP_PRODUCTION_ACCESS_TOKEN en las variables de entorno.');
+  const intent = await mercadoPagoRequest(`/point/integration-api/payment-intents/${encodeURIComponent(paymentIntentId)}`, {}, productionAccessToken);
+  const payment = intent.payment || {};
+  return {
+    status: intent.status,
+    payment: payment.id
+      ? {
+          id: String(payment.id),
+          status: payment.status,
+          amount: Number(payment.transaction_amount || 0),
+          statusDetail: payment.status_detail || null,
+        }
+      : null,
+  };
+}
+
+async function cancelPointPaymentIntent(paymentIntentId) {
+  if (!productionAccessToken) throw new Error('Falta MP_PRODUCTION_ACCESS_TOKEN en las variables de entorno.');
+  try {
+    await mercadoPagoRequest(`/point/integration-api/payment-intents/${encodeURIComponent(paymentIntentId)}`, {
+      method: 'DELETE',
+    }, productionAccessToken);
+  } catch (error) {
+    if (!/rechaz|not found|no encontrad|delet|cancel/i.test(error.message)) throw error;
+  }
+  return { cancelled: true };
+}
+
 export async function handleRequest(request, response) {
   if (request.method === 'OPTIONS') return sendJson(response, 204, {});
   try {
@@ -198,6 +266,20 @@ export async function handleRequest(request, response) {
     }
     if (request.method === 'POST' && url.pathname === '/api/mercadopago/webhook') {
       return sendJson(response, 200, { received: true });
+    }
+    if (request.method === 'GET' && url.pathname === '/api/mercadopago/point/devices') {
+      return sendJson(response, 200, { devices: await listPointDevices() });
+    }
+    if (request.method === 'POST' && url.pathname === '/api/mercadopago/point/payment-intent') {
+      return sendJson(response, 201, await createPointPaymentIntent(await readJson(request)));
+    }
+    if (request.method === 'GET' && url.pathname.startsWith('/api/mercadopago/point/payment-intent/')) {
+      const paymentIntentId = decodeURIComponent(url.pathname.slice('/api/mercadopago/point/payment-intent/'.length));
+      return sendJson(response, 200, await getPointPaymentIntentStatus(paymentIntentId));
+    }
+    if (request.method === 'DELETE' && url.pathname.startsWith('/api/mercadopago/point/payment-intent/')) {
+      const paymentIntentId = decodeURIComponent(url.pathname.slice('/api/mercadopago/point/payment-intent/'.length));
+      return sendJson(response, 200, await cancelPointPaymentIntent(paymentIntentId));
     }
     return sendJson(response, 404, { error: 'Ruta no encontrada.' });
   } catch (error) {

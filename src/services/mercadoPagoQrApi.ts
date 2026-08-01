@@ -29,6 +29,28 @@ interface MercadoPagoStaticPaymentMatch {
   };
 }
 
+export interface MercadoPagoPointDevice {
+  deviceId: string;
+  name: string;
+  operatingMode: string | null;
+}
+
+export interface MercadoPagoPointPaymentIntent {
+  paymentIntentId: string;
+  status: string;
+  deviceId: string;
+}
+
+export interface MercadoPagoPointPaymentIntentStatus {
+  status: string;
+  payment: {
+    id: string;
+    status: string;
+    amount: number;
+    statusDetail: string | null;
+  } | null;
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(path, options);
   const data = await response.json().catch(() => ({}));
@@ -58,4 +80,24 @@ export function findMercadoPagoStaticQrPayment(amount: number, since: string) {
 
 export function getMercadoPagoStaticQr() {
   return request<{ qrData: string }>('/api/mercadopago/static-qr');
+}
+
+export function listMercadoPagoPointDevices() {
+  return request<{ devices: MercadoPagoPointDevice[] }>('/api/mercadopago/point/devices');
+}
+
+export function createMercadoPagoPointPaymentIntent(input: { amount: number; description: string; externalReference: string }) {
+  return request<MercadoPagoPointPaymentIntent>('/api/mercadopago/point/payment-intent', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+}
+
+export function getMercadoPagoPointPaymentIntentStatus(paymentIntentId: string) {
+  return request<MercadoPagoPointPaymentIntentStatus>(`/api/mercadopago/point/payment-intent/${encodeURIComponent(paymentIntentId)}`);
+}
+
+export function cancelMercadoPagoPointPaymentIntent(paymentIntentId: string) {
+  return request<{ cancelled: boolean }>(`/api/mercadopago/point/payment-intent/${encodeURIComponent(paymentIntentId)}`, { method: 'DELETE' });
 }

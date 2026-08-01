@@ -38,7 +38,7 @@ import { FiscalRulesEngine } from '../../billing/services/FiscalRulesEngine';
 import { MercadoPagoLogo } from '../../../components/common/MercadoPagoLogo';
 import { CuentaDniLogo } from '../../../components/common/CuentaDniLogo';
 import { calculateCartTotals } from '../utils/calculateCartTotals';
-import { createMercadoPagoQr, cancelMercadoPagoQr, getMercadoPagoQrStatus, getMercadoPagoStaticQr } from '../../../services/mercadoPagoQrApi';
+import { createMercadoPagoQr, cancelMercadoPagoQr, getMercadoPagoQrStatus, getMercadoPagoStaticQr, listMercadoPagoPointDevices, createMercadoPagoPointPaymentIntent, getMercadoPagoPointPaymentIntentStatus, cancelMercadoPagoPointPaymentIntent } from '../../../services/mercadoPagoQrApi';
 
 const computeSurcharge = (amount: number, ratePercent: number) => {
   const rate = ratePercent / 100;
@@ -80,6 +80,14 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
   const [cdniPayment, setCdniPayment] = React.useState<CuentaDniPaymentResult | null>(null);
   const [cdniRefInput, setCdniRefInput] = React.useState('');
 
+  // Point Smart payment intent state
+  const [pointStatus, setPointStatus] = React.useState<'IDLE' | 'CREATING' | 'WAITING' | 'APPROVED' | 'ERROR'>('IDLE');
+  const [pointIntentId, setPointIntentId] = React.useState<string | null>(null);
+  const [pointDeviceName, setPointDeviceName] = React.useState<string | null>(null);
+  const [pointError, setPointError] = React.useState('');
+  const pointPendingRef = React.useRef(false);
+  const pointAddedRef = React.useRef(false);
+
   const cdniProvider = React.useMemo(() => new CuentaDniPaymentProvider(), []);
 
   const { grandTotal } = calculateCartTotals(cart, discountGlobal);
@@ -105,6 +113,10 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
       setMpReference(null);
       setMpQrData(null);
       setMpError('');
+      setPointStatus('IDLE');
+      setPointIntentId(null);
+      setPointDeviceName(null);
+      setPointError('');
       setTimeout(() => amountRef.current?.focus(), 50);
     } else {
       if (mpPendingRef.current) {
@@ -117,6 +129,15 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
       setMpReference(null);
       setMpQrData(null);
       setMpError('');
+      if (pointPendingRef.current && pointIntentId) {
+        void cancelMercadoPagoPointPaymentIntent(pointIntentId).catch(() => undefined);
+      }
+      pointPendingRef.current = false;
+      pointAddedRef.current = false;
+      setPointStatus('IDLE');
+      setPointIntentId(null);
+      setPointDeviceName(null);
+      setPointError('');
     }
   }, [isPaymentModalOpen]);
 
@@ -222,8 +243,88 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
     void cancelMercadoPagoQr().catch(() => undefined);
   };
 
+  const startPointCharge = async () => {
+    pointAddedRef.current = false;
+    pointPendingRef.current = true;
+    setPointStatus('CREATING');
+    setPointError('');
+    try {
+      const { devices } = await listMercadoPagoPointDevices();
+      if (!devices.length) throw new Error('No hay dispositivos Point vinculados a esta cuenta de Mercado Pago.');
+      const device = devices[0];
+      const externalReference = `POS-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+      const intent = await createMercadoPagoPointPaymentIntent({
+        amount: amountForMethod,
+        description: 'Venta POS Mis Dos Amores',
+        externalReference,
+      });
+      setPointIntentId(intent.paymentIntentId);
+      setPointDeviceName(device.name || null);
+      setPointStatus('WAITING');
+    } catch (error) {
+      pointPendingRef.current = false;
+      setPointError(error instanceof Error ? error.message : 'No se pudo iniciar el cobro con Point.');
+      setPointStatus('ERROR');
+    }
+  };
+
+  const cancelPointCharge = () => {
+    const id = pointIntentId;
+    if (!id) return;
+    pointPendingRef.current = false;
+    setPointIntentId(null);
+    setPointStatus('IDLE');
+    setPointError('');
+    void cancelMercadoPagoPointPaymentIntent(id).catch(() => undefined);
+  };
+
+  React.useEffect(() => {
+    if (!isPaymentModalOpen || selectedMethod !== 'CARD' || pointStatus !== 'WAITING' || !pointIntentId) return;
+    let active = true;
+    const checkPointPayment = async () => {
+      try {
+        const intent = await getMercadoPagoPointPaymentIntentStatus(pointIntentId);
+        if (!active) return;
+        if (intent.status === 'succeeded' || intent.payment?.status === 'approved') {
+          if (!pointAddedRef.current) {
+            pointAddedRef.current = true;
+            pointPendingRef.current = false;
+            setPointStatus('APPROVED');
+            const reference = intent.payment?.id ? `POINT-${intent.payment.id}` : `POINT-${pointIntentId}`;
+            addPayment({ method: 'CARD', amount: amountForMethod, reference, change: 0, surchargeAmount: pendingSurcharge });
+            addNotification({ title: 'Cobro con Point aprobado', message: `Transacción confirmada: ${reference}`, type: 'success' });
+          }
+        } else if (['error', 'canceled', 'abandoned'].includes(intent.status)) {
+          pointPendingRef.current = false;
+          setPointError(intent.payment?.statusDetail || 'El cobro fue rechazado o cancelado.');
+          setPointStatus('ERROR');
+        }
+      } catch (error) {
+        if (!active) return;
+        pointPendingRef.current = false;
+        setPointError(error instanceof Error ? error.message : 'No se pudo consultar el estado del cobro con Point.');
+        setPointStatus('ERROR');
+      }
+    };
+    void checkPointPayment();
+    const interval = window.setInterval(() => void checkPointPayment(), 3000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [addNotification, addPayment, amountForMethod, isPaymentModalOpen, pendingSurcharge, pointIntentId, pointStatus, selectedMethod]);
+
   const handleSelectMethod = (method: ExtendedPaymentMethod) => {
     setSelectedMethod(method);
+    if (pointPendingRef.current && pointIntentId) {
+      void cancelMercadoPagoPointPaymentIntent(pointIntentId).catch(() => undefined);
+    }
+    pointPendingRef.current = false;
+    pointAddedRef.current = false;
+    setPointStatus('IDLE');
+    setPointIntentId(null);
+    setPointDeviceName(null);
+    setPointError('');
     const methodHasSurcharge = method === 'CARD' || method === 'MERCADOPAGO' || method === 'CUENTA_DNI';
     const percent = method === 'MERCADOPAGO' ? 5 : method === 'CARD' ? (cardType === 'CREDIT' ? 10 : 5) : cdniPercent;
     const amount = pendingBase * (methodHasSurcharge ? 1 + percent / 100 : 1);
@@ -735,11 +836,64 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
                 <Typography variant="body2" sx={{ fontWeight: 800, color: '#64748B' }}>
                   Incluye recargo de {cardType === 'CREDIT' ? 'crédito (10%)' : 'débito (5%)'}.
                 </Typography>
+
+                <Button
+                  fullWidth
+                  variant="contained"
+                  onClick={() => void startPointCharge()}
+                  disabled={pointStatus === 'CREATING' || pointStatus === 'WAITING'}
+                  startIcon={pointStatus === 'CREATING' ? <CircularProgress size={20} color="inherit" /> : <CreditCard size={20} />}
+                  sx={{ mt: 1.5, borderRadius: 2.5, fontWeight: 900, py: 1.5, fontSize: '1.05rem', bgcolor: '#009EE3', '&:hover': { bgcolor: '#0286C2' } }}
+                >
+                  {pointStatus === 'CREATING' ? 'Conectando con el lector...' : 'Cobrar con Point Smart'}
+                </Button>
+
+                {pointStatus === 'WAITING' && (
+                  <Box sx={{ p: 1.5, bgcolor: '#FFFFFF', borderRadius: 2.5, border: '1px solid #BFDBFE', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1.5, mb: 1.5 }}>
+                    <CircularProgress size={20} color="primary" />
+                    <Typography variant="body1" sx={{ fontWeight: 800, color: '#1E40AF' }}>
+                      {pointDeviceName ? `Lector ${pointDeviceName}: ` : ''}el cliente apoya la tarjeta en el lector...
+                    </Typography>
+                  </Box>
+                )}
+
+                {pointStatus === 'APPROVED' && (
+                  <Box sx={{ p: 1.5, bgcolor: '#DCFCE7', borderRadius: 2.5, border: '1px solid #86EFAC', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, mb: 1.5 }}>
+                    <CheckCheck size={24} color="#16A34A" />
+                    <Typography variant="body1" sx={{ fontWeight: 900, color: '#15803D' }}>
+                      ¡Cobro con Point confirmado!
+                    </Typography>
+                  </Box>
+                )}
+
+                {pointStatus === 'ERROR' && (
+                  <Box sx={{ display: 'grid', gap: 1, mt: 1.5, mb: 1 }}>
+                    <Alert severity="error">{pointError}</Alert>
+                    <Button variant="outlined" onClick={() => void startPointCharge()} startIcon={<RefreshCw size={18} />} sx={{ borderRadius: 2.5, fontWeight: 800 }}>
+                      Volver a intentar con Point
+                    </Button>
+                  </Box>
+                )}
+
+                {pointStatus === 'WAITING' && (
+                  <Button variant="outlined" size="small" onClick={cancelPointCharge} sx={{ borderRadius: 2.5, fontWeight: 800, color: '#475569', borderColor: '#CBD5E1' }}>
+                    Cancelar cobro con Point
+                  </Button>
+                )}
+
+                {pointStatus !== 'WAITING' && (
+                  <>
+                    <Divider sx={{ my: 1.5, borderColor: '#BFDBFE' }} />
+                    <Typography variant="caption" sx={{ fontWeight: 800, color: '#64748B' }}>
+                      O ingresá el monto a mano abajo:
+                    </Typography>
+                  </>
+                )}
               </Paper>
             )}
 
             {/* Standard manual payment amount field */}
-            {selectedMethod !== 'MERCADOPAGO' && selectedMethod !== 'CUENTA_DNI' && (
+            {selectedMethod !== 'MERCADOPAGO' && selectedMethod !== 'CUENTA_DNI' && pointStatus !== 'WAITING' && (
               <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center', mb: 2 }}>
                 <TextField
                   inputRef={amountRef}
