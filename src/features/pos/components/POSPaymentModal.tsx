@@ -498,12 +498,11 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
 
   return (
     <>
-    <Dialog open={isPaymentModalOpen} onClose={closePaymentModal} maxWidth="md" fullWidth slotProps={{ paper: { sx: { borderRadius: 4, p: 1, bgcolor: '#FFFFFF', color: '#0F172A', border: '2px solid #E2E8F0' } } }}>
-      <DialogTitle sx={{ fontWeight: 900, fontSize: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#0F172A' }}>
+    <Dialog open={isPaymentModalOpen} onClose={closePaymentModal} fullScreen slotProps={{ paper: { sx: { bgcolor: '#F8FAFC', color: '#0F172A' } } }}>
+      <DialogTitle sx={{ fontWeight: 900, fontSize: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#0F172A', px: 3, py: 2, bgcolor: '#FFFFFF', borderBottom: '1px solid #E2E8F0' }}>
         <span>💳 Procesar Cobro (Pago Mixto / Múltiples Medios)</span>
          <Chip label={`TOTAL: $${totalToCollect.toFixed(2)}`} color="primary" sx={{ fontSize: '1.55rem', fontWeight: 900, py: 3, px: 1.5, borderRadius: 3, bgcolor: '#2563EB', color: '#FFFFFF' }} />
       </DialogTitle>
-      <Divider sx={{ borderColor: '#E2E8F0' }} />
 
       <DialogContent sx={{ py: 3 }}>
         <Alert severity="info" icon={<ShieldCheck size={20} />} sx={{ mb: 3, borderRadius: 3, fontSize: '1rem', fontWeight: 700 }}>

@@ -167,8 +167,17 @@ async function getPaymentStatus(externalReference) {
 
 async function listPointDevices() {
   if (!productionAccessToken) throw new Error('Falta MP_PRODUCTION_ACCESS_TOKEN en las variables de entorno.');
+  const terminals = await mercadoPagoRequest('/terminals/v1/list?limit=50', {}, productionAccessToken);
+  const terminalList = terminals?.data?.terminals;
+  if (Array.isArray(terminalList)) {
+    return terminalList.map((terminal) => ({
+      deviceId: terminal.id,
+      name: terminal.id,
+      operatingMode: terminal.operating_mode || null,
+    }));
+  }
   const devices = await mercadoPagoRequest('/point/integration-api/devices', {}, productionAccessToken);
-  const list = devices?.results || devices || [];
+  const list = devices?.results || devices?.devices || devices || [];
   if (!Array.isArray(list)) return [];
   return list.map((device) => ({
     deviceId: device.id,
@@ -180,8 +189,8 @@ async function listPointDevices() {
 async function resolvePointDeviceId() {
   if (productionPointDeviceId) return productionPointDeviceId;
   const devices = await listPointDevices();
-  if (devices.length === 0) throw new Error('No hay dispositivos Point vinculados a esta cuenta de Mercado Pago.');
-  if (devices.length > 1) throw new Error('Hay varios dispositivos Point. Configurá MP_PRODUCTION_POINT_DEVICE_ID en las variables de entorno.');
+  if (devices.length === 0) throw new Error('No hay lectores Point vinculados a esta cuenta. Vinculá el Point Smart en la app Mercado Pago y verificá que esté en modo Punto de Venta (PDV).');
+  if (devices.length > 1) throw new Error('Hay varios lectores Point. Configurá MP_PRODUCTION_POINT_DEVICE_ID en las variables de entorno.');
   return devices[0].deviceId;
 }
 
