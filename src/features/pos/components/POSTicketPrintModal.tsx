@@ -44,23 +44,46 @@ function formatCuit(raw: string | null | undefined): string {
   return String(raw || '');
 }
 
-function formatDate(value: string | undefined): string {
-  if (!value) return '';
-  const iso = value.includes('T') ? value.slice(0, 10) : value;
-  const [y, m, d] = iso.split('-');
-  if (!y || !m || !d) return iso;
-  return `${d}/${m}/${y}`;
+function toDate(value: unknown): Date | null {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  const ts = value as { toDate?: () => Date };
+  if (typeof ts.toDate === 'function') {
+    const d = ts.toDate();
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  const d = new Date(String(value));
+  return Number.isNaN(d.getTime()) ? null : d;
 }
 
-function formatCaeExpiration(value: string | undefined): string {
-  if (!value) return '';
+function formatDate(value: unknown): string {
+  const d = toDate(value);
+  if (!d) return value ? String(value) : '';
+  const [y, m, dd] = [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')];
+  return `${dd}/${m}/${y}`;
+}
+
+function toIsoDate(value: unknown): string {
+  const d = toDate(value);
+  if (!d) return '';
+  const [y, m, dd] = [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')];
+  return `${y}-${m}-${dd}`;
+}
+
+function formatDateTime(value: unknown): string {
+  const d = toDate(value);
+  return d ? d.toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' }) : value ? String(value) : '';
+}
+
+function formatCaeExpiration(value: unknown): string {
+  if (typeof value !== 'string' || !value) return '';
   const digits = value.replace(/\D/g, '');
   if (digits.length === 8) return `${digits.slice(6, 8)}/${digits.slice(4, 6)}/${digits.slice(0, 4)}`;
   return value;
 }
 
 function parseFiscalFromNotes(notes: string | undefined): Partial<FiscalInvoice> | null {
-  if (!notes) return null;
+  if (typeof notes !== 'string' || !notes) return null;
   const cae = notes.match(/CAE:\s*(\S+)/)?.[1];
   const voucherNumber = Number(notes.match(/Factura ARCA #(\d+)/)?.[1] || 0);
   if (!cae) return null;
@@ -74,7 +97,7 @@ function buildFiscalQrData(sale: Sale, cuit: string | null | undefined): string 
 
   const data: Record<string, number | string> = {
     ver: 1,
-    fecha: (fi.emittedAt || sale.createdAt || '').slice(0, 10),
+    fecha: toIsoDate(fi.emittedAt || sale.createdAt),
     cuit: Number(cuitDigits),
     ptoVta: fi.salesPoint,
     tipoCmp: fi.voucherType,
@@ -95,7 +118,7 @@ function buildFiscalQrData(sale: Sale, cuit: string | null | undefined): string 
 
 export const POSTicketPrintModal: React.FC<POSTicketPrintModalProps> = ({ sale, onClose }) => {
   const { data: company } = useCompany();
-  const isFiscal = Boolean(sale?.fiscalInvoice) || Boolean(sale?.notes?.includes('CAE'));
+  const isFiscal = Boolean(sale?.fiscalInvoice) || String(sale?.notes || '').includes('CAE');
 
   const [arcaConfig, setArcaConfig] = React.useState<ArcaConfig | null>(null);
   React.useEffect(() => {
@@ -263,7 +286,7 @@ export const POSTicketPrintModal: React.FC<POSTicketPrintModalProps> = ({ sale, 
                 Ticket: {sale.ticketNumber}
               </Typography>
               <Typography className="ticket-detail" variant="caption" sx={{ display: 'block' }}>
-                Fecha: {new Date(sale.createdAt).toLocaleString()}
+                Fecha: {formatDateTime(sale.createdAt)}
               </Typography>
               <Typography className="ticket-detail" variant="caption" sx={{ display: 'block' }}>
                 Cliente: {sale.customerName}

@@ -192,20 +192,23 @@ export const BillingView: React.FC = () => {
     return !!s && s.status === 'COMPLETED' && !s.fiscalInvoice && s.payments?.some((p) => p.method === 'QR' || p.method === 'CARD');
   };
 
-  const comprobantes = sales.map((s) => ({
+  const comprobantes = sales.map((s) => {
+    const notes = typeof s.notes === 'string' ? s.notes : '';
+    return {
     id: s.id,
     ticketNumber: s.ticketNumber,
     receiverName: s.customerName || 'Consumidor Final',
     taxId: '',
     total: s.grandTotal,
-    type: s.notes?.includes('CAE') ? ('ARCA' as const) : ('INTERNO' as const),
-    cae: s.notes?.includes('CAE') ? s.notes.match(/CAE: (\S+)/)?.[1] || '' : '',
-    voucherNumber: s.fiscalInvoice?.voucherNumber ?? (Number(s.notes?.match(/Factura ARCA #(\d+)/)?.[1] || 0) || null),
+    type: notes.includes('CAE') ? ('ARCA' as const) : ('INTERNO' as const),
+    cae: notes.includes('CAE') ? notes.match(/CAE: (\S+)/)?.[1] || '' : '',
+    voucherNumber: s.fiscalInvoice?.voucherNumber ?? (Number(notes.match(/Factura ARCA #(\d+)/)?.[1] || 0) || null),
     status: statusLabel(s),
     rawStatus: s.status,
     createdAt: s.createdAt,
     hasFiles: false,
-  }));
+  };
+  });
 
   return (
     <><Box sx={{ p: 3, bgcolor: '#FFFFFF' }}>
