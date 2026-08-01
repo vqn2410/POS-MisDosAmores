@@ -53,7 +53,7 @@ export const POSProductGrid: React.FC = () => {
     const matchesSearch =
       p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       p.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      p.barcode.includes(searchTerm);
+      (p.barcode || '').includes(searchTerm);
     return matchesCat && matchesSearch;
   });
 

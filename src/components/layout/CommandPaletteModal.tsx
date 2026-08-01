@@ -52,7 +52,7 @@ export const CommandPaletteModal: React.FC = () => {
   );
 
   const filteredProducts = products.filter(
-    (p) => p.name.toLowerCase().includes(cleanQuery) || p.sku.toLowerCase().includes(cleanQuery) || p.barcode.includes(cleanQuery)
+    (p) => p.name.toLowerCase().includes(cleanQuery) || p.sku.toLowerCase().includes(cleanQuery) || (p.barcode || '').includes(cleanQuery)
   );
 
   const filteredCustomers = customers.filter(
