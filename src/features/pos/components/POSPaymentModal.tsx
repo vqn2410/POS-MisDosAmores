@@ -63,6 +63,10 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
   const [cdniPercent, setCdniPercent] = React.useState(5);
   const amountRef = React.useRef<HTMLInputElement>(null);
 
+  // "Otro monto": permite cobrar un monto final distinto al calculado (QR / Tarjeta).
+  const [customAmount, setCustomAmount] = React.useState('');
+  const [customAmountActive, setCustomAmountActive] = React.useState(false);
+
   // Mercado Pago dynamic QR approval state
   const [mpStatus, setMpStatus] = React.useState<'IDLE' | 'CREATING' | 'WAITING' | 'APPROVED' | 'ERROR'>('IDLE');
   const [mpTxId, setMpTxId] = React.useState<string | null>(null);
@@ -87,6 +91,9 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
   const [pointError, setPointError] = React.useState('');
   const pointPendingRef = React.useRef(false);
   const pointAddedRef = React.useRef(false);
+  const mpCustomRef = React.useRef(false);
+  const pointCustomRef = React.useRef(false);
+  const pointAmountRef = React.useRef(0);
 
   const cdniProvider = React.useMemo(() => new CuentaDniPaymentProvider(), []);
 
@@ -100,10 +107,14 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
   const pendingSurcharge = hasSurcharge ? pendingBase * (surchargePercent / 100) : 0;
   const checkoutTotal = grandTotal + surchargeAmount;
   const totalToCollect = checkoutTotal + pendingSurcharge;
-  const change = Math.max(0, totalPaid - checkoutTotal);
+  const totalChange = payments.reduce((acc, p) => acc + (p.change || 0), 0);
   const enteredAmount = Number(payAmount.replace(',', '.')) || 0;
-  const changePreview = selectedMethod === 'CASH' ? Math.max(0, totalPaid + enteredAmount - checkoutTotal) : change;
+  const changePreview = selectedMethod === 'CASH' ? Math.max(0, totalPaid + enteredAmount - checkoutTotal) : totalChange;
   const amountForMethod = pendingBase + pendingSurcharge;
+  const customAmountValue = Number(customAmount.replace(',', '.')) || 0;
+  const useCustomAmount = customAmountActive && customAmountValue > 0;
+  const chargeAmount = useCustomAmount ? customAmountValue : amountForMethod;
+  const saleTotal = totalPaid - totalChange;
 
   React.useEffect(() => {
     if (isPaymentModalOpen) {
@@ -117,6 +128,8 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
       setPointOrderId(null);
       setPointDeviceName(null);
       setPointError('');
+      setCustomAmount('');
+      setCustomAmountActive(false);
       setTimeout(() => amountRef.current?.focus(), 50);
     } else {
       if (mpPendingRef.current) {
@@ -138,6 +151,8 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
       setPointOrderId(null);
       setPointDeviceName(null);
       setPointError('');
+      setCustomAmount('');
+      setCustomAmountActive(false);
     }
   }, [isPaymentModalOpen]);
 
@@ -146,6 +161,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
     const externalReference = `POS-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
     mpPaymentAddedRef.current = false;
     mpPendingRef.current = true;
+    mpCustomRef.current = useCustomAmount;
     setMpStatus('CREATING');
     setMpTxId(null);
     setMpReference(null);
@@ -185,7 +201,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
           mpPendingRef.current = false;
           setMpTxId(payment.paymentId);
           setMpStatus('APPROVED');
-          addPayment({ method: 'QR', amount: mpAmount, reference: payment.paymentId, change: 0, surchargeAmount: computeSurcharge(mpAmount, 5) });
+          addPayment({ method: 'QR', amount: mpAmount, reference: payment.paymentId, change: 0, surchargeAmount: mpCustomRef.current ? 0 : computeSurcharge(mpAmount, 5) });
           addNotification({ title: 'Mercado Pago aprobado', message: `Transacción confirmada: ${payment.paymentId}`, type: 'success' });
         } else if (payment.status === 'rejected' || payment.status === 'cancelled') {
           setMpError(payment.detail || 'El pago fue rechazado o cancelado.');
@@ -215,7 +231,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
         mpPendingRef.current = false;
         setMpTxId(payment.paymentId);
         setMpStatus('APPROVED');
-        addPayment({ method: 'QR', amount: mpAmount, reference: payment.paymentId, change: 0 });
+        addPayment({ method: 'QR', amount: mpAmount, reference: payment.paymentId, change: 0, surchargeAmount: mpCustomRef.current ? 0 : computeSurcharge(mpAmount, 5) });
         addNotification({ title: 'Mercado Pago aprobado', message: `Transacción confirmada: ${payment.paymentId}`, type: 'success' });
       } else if (payment.status === 'rejected' || payment.status === 'cancelled') {
         setMpError(payment.detail || 'El pago fue rechazado o cancelado.');
@@ -237,7 +253,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
     mpPendingRef.current = false;
     setMpTxId('MANUAL');
     setMpStatus('APPROVED');
-    addPayment({ method: 'QR', amount: mpAmount, reference: `MANUAL-${Date.now()}`, change: 0, surchargeAmount: computeSurcharge(mpAmount, 5) });
+    addPayment({ method: 'QR', amount: mpAmount, reference: `MANUAL-${Date.now()}`, change: 0, surchargeAmount: mpCustomRef.current ? 0 : computeSurcharge(mpAmount, 5) });
     addNotification({ title: 'Pago validado manualmente', message: `Se asoció el pago manual de $${mpAmount.toFixed(2)} al ticket.`, type: 'success' });
     setManualValidateOpen(false);
     void cancelMercadoPagoQr().catch(() => undefined);
@@ -246,6 +262,8 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
   const startPointCharge = async () => {
     pointAddedRef.current = false;
     pointPendingRef.current = true;
+    pointCustomRef.current = useCustomAmount;
+    pointAmountRef.current = chargeAmount;
     setPointStatus('CREATING');
     setPointError('');
     try {
@@ -254,7 +272,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
       const device = devices[0];
       const externalReference = `POS-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
       const order = await createMercadoPagoPointOrder({
-        amount: amountForMethod,
+        amount: pointAmountRef.current,
         description: 'Venta POS Mis Dos Amores',
         externalReference,
       });
@@ -313,7 +331,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
             pointPendingRef.current = false;
             setPointStatus('APPROVED');
             const reference = order.payment?.id ? `POINT-${order.payment.id}` : `POINT-${pointOrderId}`;
-            addPayment({ method: 'CARD', amount: amountForMethod, reference, change: 0, surchargeAmount: pendingSurcharge });
+            addPayment({ method: 'CARD', amount: pointAmountRef.current, reference, change: 0, surchargeAmount: pointCustomRef.current ? 0 : pendingSurcharge });
             addNotification({ title: 'Cobro con Point aprobado', message: `Transacción confirmada: ${reference}`, type: 'success' });
           }
         } else if (['failed', 'canceled', 'expired', 'refunded'].includes(order.status)) {
@@ -338,6 +356,8 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
 
   const handleSelectMethod = (method: ExtendedPaymentMethod) => {
     setSelectedMethod(method);
+    setCustomAmount('');
+    setCustomAmountActive(false);
     if (pointPendingRef.current && pointOrderId) {
       void cancelMercadoPagoPointOrder(pointOrderId).catch(() => undefined);
     }
@@ -455,16 +475,16 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
             docType: customer.taxId ? 80 : 99,
             docNumber: customer.taxId || '00000000',
             condicionIvaId: 5,
-            subtotal: checkoutTotal,
+            subtotal: saleTotal,
             taxTotal: 0,
-            grandTotal: checkoutTotal,
+            grandTotal: saleTotal,
           });
         } catch (err) {
           arcaError = err instanceof Error ? err.message : 'ARCA no pudo emitir la factura.';
         }
       }
 
-      const sale = completeSale(ticketNumber, surchargeAmount);
+      const sale = completeSale(ticketNumber, saleTotal - grandTotal);
       if (!sale) return;
 
       if (fiscalEvaluation?.fiscalResult) {
@@ -516,7 +536,16 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
     }
   };
 
-  const isCheckoutDisabled = totalPaid < checkoutTotal || (selectedMethod === 'MERCADOPAGO' && mpStatus !== 'APPROVED');
+  const chargeSettled =
+    selectedMethod === 'MERCADOPAGO'
+      ? mpStatus === 'APPROVED'
+      : selectedMethod === 'CUENTA_DNI'
+      ? cdniPayment?.status === 'MANUALLY_CONFIRMED'
+      : selectedMethod === 'CARD' && pointStatus !== 'IDLE'
+      ? pointStatus === 'APPROVED'
+      : totalPaid >= checkoutTotal;
+
+  const isCheckoutDisabled = !chargeSettled;
 
   return (
     <>
@@ -691,7 +720,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
               </Grid>
             </Grid>
 
-            {hasSurcharge && (
+            {hasSurcharge && !useCustomAmount && (
               <Paper elevation={0} sx={{ p: 2, mb: 3, borderRadius: 3, bgcolor: '#FFF7ED', border: '2px solid #FED7AA' }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
                   <Typography sx={{ fontWeight: 900, color: '#9A3412' }}>Recargo por {selectedMethod === 'CARD' ? 'tarjeta' : 'QR'}:</Typography>
@@ -728,6 +757,12 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
               </Paper>
             )}
 
+            {useCustomAmount && (
+              <Alert severity="info" sx={{ mb: 3, borderRadius: 3, fontWeight: 700 }}>
+                Monto final: se cobrará exactamente ${chargeAmount.toFixed(2)} (sin recargo adicional).
+              </Alert>
+            )}
+
             {/* Mercado Pago standing QR (modelo atendido): the order is attached to the caja's static QR */}
             {selectedMethod === 'MERCADOPAGO' && (
               <Paper elevation={0} sx={{ p: 2.5, mb: 3, borderRadius: 3.5, bgcolor: '#F0F9FF', border: '2px solid #BAE6FD', textAlign: 'center' }}>
@@ -738,7 +773,42 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
 
                 <Box sx={{ bgcolor: '#FFFFFF', borderRadius: 3, border: '1px solid #BAE6FD', p: 1.5, mb: 1.5 }}>
                   <Typography variant="body2" sx={{ fontWeight: 800, color: '#0284C7' }}>Monto a pagar</Typography>
-                  <Typography variant="h4" sx={{ fontWeight: 900, color: '#075985' }}>${amountForMethod.toFixed(2)}</Typography>
+                  <Typography variant="h4" sx={{ fontWeight: 900, color: '#075985' }}>${chargeAmount.toFixed(2)}</Typography>
+                </Box>
+
+                <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', justifyContent: 'center', mb: 1.5 }}>
+                  <Button
+                    variant={customAmountActive ? 'contained' : 'outlined'}
+                    size="small"
+                    disabled={mpStatus === 'APPROVED'}
+                    onClick={() => setCustomAmountActive((v) => !v)}
+                    sx={{ borderRadius: 2.5, fontWeight: 800 }}
+                  >
+                    Otro monto
+                  </Button>
+                  {customAmountActive && (
+                    <>
+                      <TextField
+                        type="number"
+                        size="small"
+                        label="Monto final ($)"
+                        value={customAmount}
+                        onChange={(e) => setCustomAmount(e.target.value)}
+                        disabled={mpStatus === 'APPROVED'}
+                        slotProps={{ input: { sx: { fontWeight: 800, bgcolor: '#FFFFFF' } } }}
+                        sx={{ maxWidth: 150 }}
+                      />
+                      <Button
+                        variant="contained"
+                        size="small"
+                        disabled={customAmountValue <= 0 || mpStatus === 'APPROVED'}
+                        onClick={() => void createMercadoPagoQrOrder(customAmountValue)}
+                        sx={{ borderRadius: 2.5, fontWeight: 800, bgcolor: '#0369A1', '&:hover': { bgcolor: '#075985' } }}
+                      >
+                        Actualizar QR
+                      </Button>
+                    </>
+                  )}
                 </Box>
 
                 {mpQrData ? (
@@ -793,7 +863,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
                 {mpStatus === 'ERROR' && (
                   <Box sx={{ display: 'grid', gap: 1.5 }}>
                     <Alert severity="error">{mpError}</Alert>
-                    <Button variant="outlined" onClick={() => void createMercadoPagoQrOrder(amountForMethod)} sx={{ borderRadius: 2.5, fontWeight: 800 }}>
+                    <Button variant="outlined" onClick={() => void createMercadoPagoQrOrder(chargeAmount)} sx={{ borderRadius: 2.5, fontWeight: 800 }}>
                       Generar un nuevo QR
                     </Button>
                   </Box>
@@ -852,11 +922,37 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
                   💳 Ingresá este monto en el lector de Mercado Pago
                 </Typography>
                 <Typography variant="h2" sx={{ fontWeight: 900, color: '#1D4ED8', fontSize: '3.2rem', lineHeight: 1.2, my: 1 }}>
-                  ${amountForMethod.toFixed(2)}
+                  ${chargeAmount.toFixed(2)}
                 </Typography>
                 <Typography variant="body2" sx={{ fontWeight: 800, color: '#64748B' }}>
-                  Incluye recargo de {cardType === 'CREDIT' ? 'crédito (10%)' : 'débito (5%)'}.
+                  {useCustomAmount
+                    ? 'Monto final: se cobra exactamente este importe.'
+                    : `Incluye recargo de ${cardType === 'CREDIT' ? 'crédito (10%)' : 'débito (5%)'}.`}
                 </Typography>
+
+                <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', justifyContent: 'center', mb: 1.5, mt: 1 }}>
+                  <Button
+                    variant={customAmountActive ? 'contained' : 'outlined'}
+                    size="small"
+                    disabled={pointStatus === 'CREATING' || pointStatus === 'WAITING'}
+                    onClick={() => setCustomAmountActive((v) => !v)}
+                    sx={{ borderRadius: 2.5, fontWeight: 800 }}
+                  >
+                    Otro monto
+                  </Button>
+                  {customAmountActive && (
+                    <TextField
+                      type="number"
+                      size="small"
+                      label="Monto final ($)"
+                      value={customAmount}
+                      onChange={(e) => setCustomAmount(e.target.value)}
+                      disabled={pointStatus === 'CREATING' || pointStatus === 'WAITING'}
+                      slotProps={{ input: { sx: { fontWeight: 800, bgcolor: '#FFFFFF' } } }}
+                      sx={{ maxWidth: 150 }}
+                    />
+                  )}
+                </Box>
 
                 <Button
                   fullWidth
