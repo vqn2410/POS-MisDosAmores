@@ -35,14 +35,15 @@ export interface MercadoPagoPointDevice {
   operatingMode: string | null;
 }
 
-export interface MercadoPagoPointPaymentIntent {
-  paymentIntentId: string;
+export interface MercadoPagoPointOrder {
+  orderId: string;
   status: string;
   deviceId: string;
 }
 
-export interface MercadoPagoPointPaymentIntentStatus {
+export interface MercadoPagoPointOrderStatus {
   status: string;
+  statusDetail: string | null;
   payment: {
     id: string;
     status: string;
@@ -86,18 +87,18 @@ export function listMercadoPagoPointDevices() {
   return request<{ devices: MercadoPagoPointDevice[] }>('/api/mercadopago/point/devices');
 }
 
-export function createMercadoPagoPointPaymentIntent(input: { amount: number; description: string; externalReference: string }) {
-  return request<MercadoPagoPointPaymentIntent>('/api/mercadopago/point/payment-intent', {
+export function createMercadoPagoPointOrder(input: { amount: number; description: string; externalReference: string }) {
+  return request<MercadoPagoPointOrder>('/api/mercadopago/point/order', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   });
 }
 
-export function getMercadoPagoPointPaymentIntentStatus(paymentIntentId: string) {
-  return request<MercadoPagoPointPaymentIntentStatus>(`/api/mercadopago/point/payment-intent/${encodeURIComponent(paymentIntentId)}`);
+export function getMercadoPagoPointOrderStatus(orderId: string) {
+  return request<MercadoPagoPointOrderStatus>(`/api/mercadopago/point/order/${encodeURIComponent(orderId)}`);
 }
 
-export function cancelMercadoPagoPointPaymentIntent(paymentIntentId: string) {
-  return request<{ cancelled: boolean }>(`/api/mercadopago/point/payment-intent/${encodeURIComponent(paymentIntentId)}`, { method: 'DELETE' });
+export function cancelMercadoPagoPointOrder(orderId: string) {
+  return request<{ cancelled: boolean }>(`/api/mercadopago/point/order/${encodeURIComponent(orderId)}`, { method: 'DELETE' });
 }

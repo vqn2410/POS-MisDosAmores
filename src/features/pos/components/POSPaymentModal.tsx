@@ -38,7 +38,7 @@ import { FiscalRulesEngine } from '../../billing/services/FiscalRulesEngine';
 import { MercadoPagoLogo } from '../../../components/common/MercadoPagoLogo';
 import { CuentaDniLogo } from '../../../components/common/CuentaDniLogo';
 import { calculateCartTotals } from '../utils/calculateCartTotals';
-import { createMercadoPagoQr, cancelMercadoPagoQr, getMercadoPagoQrStatus, getMercadoPagoStaticQr, listMercadoPagoPointDevices, createMercadoPagoPointPaymentIntent, getMercadoPagoPointPaymentIntentStatus, cancelMercadoPagoPointPaymentIntent } from '../../../services/mercadoPagoQrApi';
+import { createMercadoPagoQr, cancelMercadoPagoQr, getMercadoPagoQrStatus, getMercadoPagoStaticQr, listMercadoPagoPointDevices, createMercadoPagoPointOrder, getMercadoPagoPointOrderStatus, cancelMercadoPagoPointOrder } from '../../../services/mercadoPagoQrApi';
 
 const computeSurcharge = (amount: number, ratePercent: number) => {
   const rate = ratePercent / 100;
@@ -80,9 +80,9 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
   const [cdniPayment, setCdniPayment] = React.useState<CuentaDniPaymentResult | null>(null);
   const [cdniRefInput, setCdniRefInput] = React.useState('');
 
-  // Point Smart payment intent state
+  // Point Smart order state
   const [pointStatus, setPointStatus] = React.useState<'IDLE' | 'CREATING' | 'WAITING' | 'APPROVED' | 'ERROR'>('IDLE');
-  const [pointIntentId, setPointIntentId] = React.useState<string | null>(null);
+  const [pointOrderId, setPointOrderId] = React.useState<string | null>(null);
   const [pointDeviceName, setPointDeviceName] = React.useState<string | null>(null);
   const [pointError, setPointError] = React.useState('');
   const pointPendingRef = React.useRef(false);
@@ -114,7 +114,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
       setMpQrData(null);
       setMpError('');
       setPointStatus('IDLE');
-      setPointIntentId(null);
+      setPointOrderId(null);
       setPointDeviceName(null);
       setPointError('');
       setTimeout(() => amountRef.current?.focus(), 50);
@@ -129,13 +129,13 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
       setMpReference(null);
       setMpQrData(null);
       setMpError('');
-      if (pointPendingRef.current && pointIntentId) {
-        void cancelMercadoPagoPointPaymentIntent(pointIntentId).catch(() => undefined);
+      if (pointPendingRef.current && pointOrderId) {
+        void cancelMercadoPagoPointOrder(pointOrderId).catch(() => undefined);
       }
       pointPendingRef.current = false;
       pointAddedRef.current = false;
       setPointStatus('IDLE');
-      setPointIntentId(null);
+      setPointOrderId(null);
       setPointDeviceName(null);
       setPointError('');
     }
@@ -253,12 +253,12 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
       if (!devices.length) throw new Error('No hay dispositivos Point vinculados a esta cuenta de Mercado Pago.');
       const device = devices[0];
       const externalReference = `POS-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
-      const intent = await createMercadoPagoPointPaymentIntent({
+      const order = await createMercadoPagoPointOrder({
         amount: amountForMethod,
         description: 'Venta POS Mis Dos Amores',
         externalReference,
       });
-      setPointIntentId(intent.paymentIntentId);
+      setPointOrderId(order.orderId);
       setPointDeviceName(device.name || null);
       setPointStatus('WAITING');
     } catch (error) {
@@ -269,34 +269,34 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
   };
 
   const cancelPointCharge = () => {
-    const id = pointIntentId;
+    const id = pointOrderId;
     if (!id) return;
     pointPendingRef.current = false;
-    setPointIntentId(null);
+    setPointOrderId(null);
     setPointStatus('IDLE');
     setPointError('');
-    void cancelMercadoPagoPointPaymentIntent(id).catch(() => undefined);
+    void cancelMercadoPagoPointOrder(id).catch(() => undefined);
   };
 
   React.useEffect(() => {
-    if (!isPaymentModalOpen || selectedMethod !== 'CARD' || pointStatus !== 'WAITING' || !pointIntentId) return;
+    if (!isPaymentModalOpen || selectedMethod !== 'CARD' || pointStatus !== 'WAITING' || !pointOrderId) return;
     let active = true;
     const checkPointPayment = async () => {
       try {
-        const intent = await getMercadoPagoPointPaymentIntentStatus(pointIntentId);
+        const order = await getMercadoPagoPointOrderStatus(pointOrderId);
         if (!active) return;
-        if (intent.status === 'succeeded' || intent.payment?.status === 'approved') {
+        if (order.status === 'processed' || order.payment?.status === 'approved' || order.payment?.status === 'accredited') {
           if (!pointAddedRef.current) {
             pointAddedRef.current = true;
             pointPendingRef.current = false;
             setPointStatus('APPROVED');
-            const reference = intent.payment?.id ? `POINT-${intent.payment.id}` : `POINT-${pointIntentId}`;
+            const reference = order.payment?.id ? `POINT-${order.payment.id}` : `POINT-${pointOrderId}`;
             addPayment({ method: 'CARD', amount: amountForMethod, reference, change: 0, surchargeAmount: pendingSurcharge });
             addNotification({ title: 'Cobro con Point aprobado', message: `Transacción confirmada: ${reference}`, type: 'success' });
           }
-        } else if (['error', 'canceled', 'abandoned'].includes(intent.status)) {
+        } else if (['failed', 'canceled', 'expired', 'refunded'].includes(order.status)) {
           pointPendingRef.current = false;
-          setPointError(intent.payment?.statusDetail || 'El cobro fue rechazado o cancelado.');
+          setPointError(order.payment?.statusDetail || order.statusDetail || 'El cobro fue rechazado o cancelado.');
           setPointStatus('ERROR');
         }
       } catch (error) {
@@ -312,17 +312,17 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
       active = false;
       window.clearInterval(interval);
     };
-  }, [addNotification, addPayment, amountForMethod, isPaymentModalOpen, pendingSurcharge, pointIntentId, pointStatus, selectedMethod]);
+  }, [addNotification, addPayment, amountForMethod, isPaymentModalOpen, pendingSurcharge, pointOrderId, pointStatus, selectedMethod]);
 
   const handleSelectMethod = (method: ExtendedPaymentMethod) => {
     setSelectedMethod(method);
-    if (pointPendingRef.current && pointIntentId) {
-      void cancelMercadoPagoPointPaymentIntent(pointIntentId).catch(() => undefined);
+    if (pointPendingRef.current && pointOrderId) {
+      void cancelMercadoPagoPointOrder(pointOrderId).catch(() => undefined);
     }
     pointPendingRef.current = false;
     pointAddedRef.current = false;
     setPointStatus('IDLE');
-    setPointIntentId(null);
+    setPointOrderId(null);
     setPointDeviceName(null);
     setPointError('');
     const methodHasSurcharge = method === 'CARD' || method === 'MERCADOPAGO' || method === 'CUENTA_DNI';

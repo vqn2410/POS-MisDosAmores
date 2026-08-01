@@ -38,7 +38,10 @@ async function mercadoPagoRequest(path, options = {}, token) {
     },
   });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.message || payload.error || 'Mercado Pago rechazó la solicitud.');
+  if (!response.ok) {
+    const mpMessage = payload.errors?.[0]?.message || payload.message || payload.error;
+    throw new Error(mpMessage ? `Mercado Pago: ${mpMessage}` : 'Mercado Pago rechazó la solicitud.');
+  }
   return payload;
 }
 
@@ -194,49 +197,54 @@ async function resolvePointDeviceId() {
   return devices[0].deviceId;
 }
 
-async function createPointPaymentIntent(data) {
+async function createPointOrder(data) {
   const amount = Number(data.amount);
   if (!Number.isFinite(amount) || amount <= 0) throw new Error('El monto del cobro debe ser mayor a cero.');
-  if (!data.description) throw new Error('Falta la descripción del cobro con Point.');
+  if (!data.externalReference) throw new Error('Falta la referencia externa del cobro con Point.');
   if (!productionAccessToken) throw new Error('Falta MP_PRODUCTION_ACCESS_TOKEN en las variables de entorno.');
   const deviceId = await resolvePointDeviceId();
-  const intent = await mercadoPagoRequest(`/point/integration-api/devices/${encodeURIComponent(deviceId)}/payment-intents`, {
+  const order = await mercadoPagoRequest('/v1/orders', {
     method: 'POST',
+    headers: { 'X-Idempotency-Key': crypto.randomUUID() },
     body: JSON.stringify({
-      amount,
-      description: data.description,
-      additional_info: data.externalReference ? { external_reference: data.externalReference } : undefined,
-      mode: 'DEFAULT',
+      type: 'point',
+      external_reference: data.externalReference,
+      description: data.description || 'Venta POS Mis Dos Amores',
+      transactions: { payments: [{ amount: amount.toFixed(2) }] },
+      config: { point: { terminal_id: deviceId, print_on_terminal: 'no_ticket' } },
     }),
   }, productionAccessToken);
-  return { paymentIntentId: intent.id, status: intent.status, deviceId };
+  return { orderId: order.id, status: order.status, deviceId };
 }
 
-async function getPointPaymentIntentStatus(paymentIntentId) {
+async function getPointOrderStatus(orderId) {
   if (!productionAccessToken) throw new Error('Falta MP_PRODUCTION_ACCESS_TOKEN en las variables de entorno.');
-  const intent = await mercadoPagoRequest(`/point/integration-api/payment-intents/${encodeURIComponent(paymentIntentId)}`, {}, productionAccessToken);
-  const payment = intent.payment || {};
+  const order = await mercadoPagoRequest(`/v1/orders/${encodeURIComponent(orderId)}`, {}, productionAccessToken);
+  const payment = order.transactions?.payments?.[0] || {};
   return {
-    status: intent.status,
+    status: order.status,
+    statusDetail: order.status_detail || null,
     payment: payment.id
       ? {
           id: String(payment.id),
           status: payment.status,
-          amount: Number(payment.transaction_amount || 0),
+          amount: Number(payment.amount || 0),
           statusDetail: payment.status_detail || null,
         }
       : null,
   };
 }
 
-async function cancelPointPaymentIntent(paymentIntentId) {
+async function cancelPointOrder(orderId) {
   if (!productionAccessToken) throw new Error('Falta MP_PRODUCTION_ACCESS_TOKEN en las variables de entorno.');
   try {
-    await mercadoPagoRequest(`/point/integration-api/payment-intents/${encodeURIComponent(paymentIntentId)}`, {
-      method: 'DELETE',
+    await mercadoPagoRequest(`/v1/orders/${encodeURIComponent(orderId)}/cancel`, {
+      method: 'POST',
+      headers: { 'X-Idempotency-Key': crypto.randomUUID() },
+      body: JSON.stringify({}),
     }, productionAccessToken);
   } catch (error) {
-    if (!/rechaz|not found|no encontrad|delet|cancel/i.test(error.message)) throw error;
+    if (!/rechaz|not found|no encontrad|cancel/i.test(error.message)) throw error;
   }
   return { cancelled: true };
 }
@@ -279,16 +287,16 @@ export async function handleRequest(request, response) {
     if (request.method === 'GET' && url.pathname === '/api/mercadopago/point/devices') {
       return sendJson(response, 200, { devices: await listPointDevices() });
     }
-    if (request.method === 'POST' && url.pathname === '/api/mercadopago/point/payment-intent') {
-      return sendJson(response, 201, await createPointPaymentIntent(await readJson(request)));
+    if (request.method === 'POST' && url.pathname === '/api/mercadopago/point/order') {
+      return sendJson(response, 201, await createPointOrder(await readJson(request)));
     }
-    if (request.method === 'GET' && url.pathname.startsWith('/api/mercadopago/point/payment-intent/')) {
-      const paymentIntentId = decodeURIComponent(url.pathname.slice('/api/mercadopago/point/payment-intent/'.length));
-      return sendJson(response, 200, await getPointPaymentIntentStatus(paymentIntentId));
+    if (request.method === 'GET' && url.pathname.startsWith('/api/mercadopago/point/order/')) {
+      const orderId = decodeURIComponent(url.pathname.slice('/api/mercadopago/point/order/'.length));
+      return sendJson(response, 200, await getPointOrderStatus(orderId));
     }
-    if (request.method === 'DELETE' && url.pathname.startsWith('/api/mercadopago/point/payment-intent/')) {
-      const paymentIntentId = decodeURIComponent(url.pathname.slice('/api/mercadopago/point/payment-intent/'.length));
-      return sendJson(response, 200, await cancelPointPaymentIntent(paymentIntentId));
+    if (request.method === 'DELETE' && url.pathname.startsWith('/api/mercadopago/point/order/')) {
+      const orderId = decodeURIComponent(url.pathname.slice('/api/mercadopago/point/order/'.length));
+      return sendJson(response, 200, await cancelPointOrder(orderId));
     }
     return sendJson(response, 404, { error: 'Ruta no encontrada.' });
   } catch (error) {
