@@ -54,6 +54,7 @@ import { POSSuspendedModal } from './components/POSSuspendedModal';
 import { POSTicketPrintModal } from './components/POSTicketPrintModal';
 import { ProductNotFoundAlert } from './components/ProductNotFoundAlert';
 import { parseQuickVariableProduct } from './utils/parseQuickVariableProduct';
+import { parseQuickProductQuantity } from './utils/parseQuickProductQuantity';
 import { calculateCartTotals } from './utils/calculateCartTotals';
 import { POSStockEntryModal } from './components/POSStockEntryModal';
 import { ProductDrawerEditor } from '../products/components/ProductDrawerEditor';
@@ -62,6 +63,7 @@ import { useCurrentCashSession, useCreateCashMovement } from '../../hooks/useCas
 import { useSales } from '../../hooks/useSales';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 import { logoutFirebase } from '../auth/services/firebaseAuthService';
+import { ApiStatusChips } from '../../components/layout/ApiStatusChips';
 
 
 interface POSViewProps {
@@ -222,6 +224,14 @@ export const POSView: React.FC<POSViewProps> = ({ onOpenScanner }) => {
         return;
       }
 
+      if (trimmed.toLowerCase() === 'ocultar') {
+        useWorkspaceStore.getState().setActiveTab('pos');
+        useWorkspaceStore.getState().hideSidebar();
+        setSearchTerm('');
+        focusSearchInput();
+        return;
+      }
+
       if (trimmed.toLowerCase() === 's') {
         setStockAdjustmentMode('IN');
         setIsStockEntryOpen(true);
@@ -262,7 +272,36 @@ export const POSView: React.FC<POSViewProps> = ({ onOpenScanner }) => {
         return;
       }
 
-      // 1. PRIORITY 1: Detect fast expression "CANTIDAD * PRECIO" (e.g. 2*2000, 2 * 2000, 2,5*2000)
+      // 1. PRIORITY 1: Detect fast expression "CANTIDAD.CODIGO" (e.g. 1.999999, 4.7790123456789)
+      const qtyResult = parseQuickProductQuantity(trimmed);
+      if (qtyResult.isValid) {
+        const qtyTargetProduct = products.find(
+          (p) => p.barcode === qtyResult.code || p.sku.toLowerCase() === qtyResult.code.toLowerCase()
+        );
+        if (qtyTargetProduct) {
+          const qtyInCart = cart
+            .filter((item) => item.product.id === qtyTargetProduct.id)
+            .reduce((total, item) => total + item.quantity, 0);
+
+          if (qtyTargetProduct.tracksStock !== false && qtyInCart + qtyResult.quantity > qtyTargetProduct.stock) {
+            setOutOfStockProduct(qtyTargetProduct);
+          } else if (qtyTargetProduct.saleType === 'WEIGHT') {
+            setWeightModalProduct(qtyTargetProduct);
+          } else {
+            addProductToCart(qtyTargetProduct, qtyResult.quantity);
+            addNotification({
+              title: 'Producto Agregado',
+              message: `${qtyTargetProduct.name} × ${qtyResult.quantity} agregado al ticket`,
+              type: 'success',
+            });
+          }
+          setSearchTerm('');
+          focusSearchInput();
+          return;
+        }
+      }
+
+      // 1c. PRIORITY 1c: Detect fast expression "CANTIDAD * PRECIO" para Producto Vario (e.g. 2*2000, 2,5*2000)
       const quickResult = parseQuickVariableProduct(trimmed);
       if (quickResult.isValid) {
         addVariableProductToCart(quickResult.quantity, quickResult.unitPrice);
@@ -586,6 +625,8 @@ export const POSView: React.FC<POSViewProps> = ({ onOpenScanner }) => {
               Caja: <span style={{ fontWeight: 800 }}>Caja #1</span>
             </Typography>
           </Box>
+
+          <ApiStatusChips />
         </Box>
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>

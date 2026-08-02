@@ -22,7 +22,8 @@ import {
   TablePagination,
   TableContainer,
 } from '@mui/material';
-import { Plus, Search, Edit2, Trash2, Filter, Upload, Download, PackagePlus, Tags, Scale } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Filter, Upload, Download, PackagePlus, Tags } from 'lucide-react';
+
 import { ProductImage } from '../../components/common/ProductImage';
 import type { Product } from '../../types';
 import { useProducts, useDeleteProduct } from '../../hooks/useProducts';
@@ -31,27 +32,9 @@ import { BulkProductImportDialog } from './components/BulkProductImportDialog';
 import { useCategories, useCreateCategory } from '../../hooks/useCategories';
 import { StockEntryDialog } from './components/StockEntryDialog';
 import { useNotificationStore } from '../../store/useNotificationStore';
-import * as fs from '../../services/firestoreService';
-
-const FIAMBRE_CODES = new Set(Array.from({ length: 40 }, (_, index) => String(700 + index)));
-const FIAMBRE_NAMES = [
-  'jamon cocido sadia', 'jamon cocido 214', 'paleta de cerdo', 'jamon cocido luvianca', 'jamon cocido calchaqui',
-  'jamon cocido natural campo austral', 'jamon crudo', 'salame 214', 'mortadela calchaqui', 'salchichon primavera 214',
-  'matambre cocido de carne', 'bondiola', 'lomo ahumado', 'panceta ahumada', 'queso cheddar la serenissima',
-  'queso barra tybo', 'queso barra punta del agua', 'queso fresco port salud', 'queso fresco punta del agua',
-  'queso fresco lactear', 'queso azul', 'queso sardo semi duro', 'queso sardo duro', 'queso reggianito', 'queso pategras',
-  'muzzarella gauchito', 'muzzarella bari', 'muzzarella san juan', 'muzzarella barraza', 'muzzarella napole',
-];
-
-const normalizeFiambreValue = (value: string) => value
-  .normalize('NFD')
-  .replace(/[\u0300-\u036f]/g, '')
-  .toLowerCase();
-
-const normalizeFiambreCode = (value: string) => value.replace(/\D/g, '').replace(/^0+/, '');
 
 export const ProductsView: React.FC = () => {
-  const { data: products = [], isLoading, refetch: refetchProducts } = useProducts();
+  const { data: products = [], isLoading } = useProducts();
   const deleteProduct = useDeleteProduct();
   const { data: categories = [] } = useCategories();
   const createCategory = useCreateCategory();
@@ -66,8 +49,6 @@ export const ProductsView: React.FC = () => {
   const [isCategoryDialogOpen, setIsCategoryDialogOpen] = React.useState(false);
   const [categoryName, setCategoryName] = React.useState('');
   const [categoryDescription, setCategoryDescription] = React.useState('');
-  const [isConfiguringFiambres, setIsConfiguringFiambres] = React.useState(false);
-  const [isConfiguringCigarettes, setIsConfiguringCigarettes] = React.useState(false);
 
   const filteredProducts = products.filter(
       (p) =>
@@ -138,67 +119,6 @@ export const ProductsView: React.FC = () => {
     }
   };
 
-  const handleConfigureFiambres = async () => {
-    setIsConfiguringFiambres(true);
-    try {
-      let fiambreCategory = categories.find((category) => category.name.toLowerCase() === 'fiambre');
-      if (!fiambreCategory) {
-        const id = await createCategory.mutateAsync({ name: 'Fiambre', description: 'Fiambres y quesos vendidos a granel' });
-        fiambreCategory = { id, name: 'Fiambre' };
-      }
-
-      const matches = products.filter((product) => {
-        const sku = normalizeFiambreCode(product.sku || '');
-        const barcode = normalizeFiambreCode(product.barcode || '');
-        const name = normalizeFiambreValue(product.name || '');
-        return FIAMBRE_CODES.has(sku) || FIAMBRE_CODES.has(barcode) || FIAMBRE_NAMES.some((fiambreName) => name.includes(fiambreName));
-      });
-      if (matches.length === 0) {
-        addNotification({ title: 'No se encontraron productos', message: 'No hay productos cargados con los códigos de fiambre indicados.', type: 'warning' });
-        return;
-      }
-
-      await fs.updateMany<Product>('products', matches.map((product) => ({
-        id: product.id,
-        data: { categoryId: fiambreCategory.id, categoryName: 'Fiambre', saleType: 'WEIGHT', unit: 'kg', tracksStock: false },
-      })));
-      await refetchProducts();
-      addNotification({ title: 'Fiambres actualizados', message: `${matches.length} productos conservan su precio por kilo y no controlan stock.`, type: 'success' });
-    } catch {
-      addNotification({ title: 'Error', message: 'No se pudieron actualizar los productos de fiambre.', type: 'error' });
-    } finally {
-      setIsConfiguringFiambres(false);
-    }
-  };
-
-  const handleConfigureCigarettes = async () => {
-    setIsConfiguringCigarettes(true);
-    try {
-      let cigaretteCategory = categories.find((category) => category.name.toLowerCase() === 'cigarrillo');
-      if (!cigaretteCategory) {
-        const id = await createCategory.mutateAsync({ name: 'Cigarrillo', description: 'Productos de cigarrillos' });
-        cigaretteCategory = { id, name: 'Cigarrillo' };
-      }
-
-      const matches = products.filter((product) => normalizeFiambreValue(product.name || '').startsWith('cigarrillo'));
-      if (matches.length === 0) {
-        addNotification({ title: 'No se encontraron productos', message: 'No hay productos cuyo nombre comience con "Cigarrillo".', type: 'warning' });
-        return;
-      }
-
-      await fs.updateMany<Product>('products', matches.map((product) => ({
-        id: product.id,
-        data: { categoryId: cigaretteCategory.id, categoryName: 'Cigarrillo' },
-      })));
-      await refetchProducts();
-      addNotification({ title: 'Cigarrillos actualizados', message: `${matches.length} productos fueron asignados a la categoría Cigarrillo.`, type: 'success' });
-    } catch {
-      addNotification({ title: 'Error', message: 'No se pudieron actualizar los productos de cigarrillo.', type: 'error' });
-    } finally {
-      setIsConfiguringCigarettes(false);
-    }
-  };
-
   if (isLoading) {
     return (
       <Box sx={{ p: 3, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
@@ -222,12 +142,6 @@ export const ProductsView: React.FC = () => {
         <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', width: { xs: '100%', lg: 'auto' } }}>
           <Button variant="outlined" startIcon={<Tags size={20} />} onClick={() => setIsCategoryDialogOpen(true)} sx={{ borderRadius: 3, fontWeight: 800, minHeight: 48, px: 2.5 }}>
             Categorías
-          </Button>
-          <Button variant="outlined" color="secondary" startIcon={<Scale size={20} />} onClick={() => void handleConfigureFiambres()} disabled={isConfiguringFiambres} sx={{ borderRadius: 3, fontWeight: 800, minHeight: 48, px: 2.5 }}>
-            {isConfiguringFiambres ? 'Actualizando...' : 'Configurar fiambres'}
-          </Button>
-          <Button variant="outlined" color="warning" startIcon={<PackagePlus size={20} />} onClick={() => void handleConfigureCigarettes()} disabled={isConfiguringCigarettes} sx={{ borderRadius: 3, fontWeight: 800, minHeight: 48, px: 2.5 }}>
-            {isConfiguringCigarettes ? 'Actualizando...' : 'Configurar cigarrillos'}
           </Button>
           <Button variant="contained" color="success" startIcon={<PackagePlus size={20} />} onClick={() => { setStockProduct(null); setIsStockDialogOpen(true); }} sx={{ borderRadius: 3, fontWeight: 800, minHeight: 48, px: 2.5 }}>
             Agregar stock

@@ -28,6 +28,7 @@ import { useProducts } from '../../../hooks/useProducts';
 import { useAuthStore } from '../../../store/useAuthStore';
 import type { Product } from '../../../types';
 import { parseQuickVariableProduct } from '../utils/parseQuickVariableProduct';
+import { parseQuickProductQuantity } from '../utils/parseQuickProductQuantity';
 import { WeightInputModal } from './WeightInputModal';
 import { VariableProductModal } from './VariableProductModal';
 import { POSPaymentModal } from './POSPaymentModal';
@@ -83,7 +84,30 @@ export const MobilePOSView: React.FC<MobilePOSViewProps> = ({ onOpenScanner }) =
     const trimmed = searchTerm.trim();
     if (!trimmed) return;
 
-    // 1. Check quick expression "2*2000"
+    // 1. Check quantity . product code "1.123456"
+    const qtyResult = parseQuickProductQuantity(trimmed);
+    if (qtyResult.isValid) {
+      const qtyTargetProduct = products.find(
+        (p) => p.barcode === qtyResult.code || p.sku.toLowerCase() === qtyResult.code.toLowerCase()
+      );
+      if (qtyTargetProduct) {
+        if (qtyTargetProduct.saleType !== 'WEIGHT') {
+          addProductToCart(qtyTargetProduct, qtyResult.quantity);
+          addNotification({
+            title: 'Producto Agregado',
+            message: `${qtyTargetProduct.name} × ${qtyResult.quantity} agregado al ticket`,
+            type: 'success',
+          });
+        } else {
+          setWeightModalProduct(qtyTargetProduct);
+        }
+        setSearchTerm('');
+        focusSearchInput();
+        return;
+      }
+    }
+
+    // 1c. Check quick expression "2*2000" (Producto Vario)
     const quickResult = parseQuickVariableProduct(trimmed);
     if (quickResult.isValid) {
       addVariableProductToCart(quickResult.quantity, quickResult.unitPrice);

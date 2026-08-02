@@ -12,6 +12,7 @@ import {
   where,
   limit,
   serverTimestamp,
+  increment,
 } from 'firebase/firestore';
 import { db } from '../features/auth/services/firebaseConfig';
 
@@ -79,6 +80,14 @@ export async function update<T>(collectionName: string, id: string, data: Partia
     ...data,
     updatedAt: serverTimestamp(),
   }) as any);
+}
+
+export async function adjustStock(productId: string, delta: number): Promise<void> {
+  const docRef = doc(db, 'products', productId);
+  await updateDoc(docRef, {
+    stock: increment(delta),
+    updatedAt: serverTimestamp(),
+  });
 }
 
 export async function remove(collectionName: string, id: string): Promise<void> {

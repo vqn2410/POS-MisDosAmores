@@ -3,9 +3,11 @@ import {
   Box, Paper, Typography, Button, Grid, TextField, Divider, Chip, CircularProgress,
   Table, TableHead, TableRow, TableCell, TableBody, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle,
 } from '@mui/material';
-import { Wallet, ArrowDownCircle, ArrowUpCircle, Lock, CheckCircle2, PlayCircle, History, Undo2 } from 'lucide-react';
+import { Wallet, ArrowDownCircle, ArrowUpCircle, Lock, CheckCircle2, PlayCircle, History, Undo2, BarChart3 } from 'lucide-react';
 import { useCurrentCashSession, useOpenCashSession, useCloseCashSession, useCashMovements, useCreateCashMovement, useCancelCashMovement } from '../../hooks/useCashSessions';
 import { useSales } from '../../hooks/useSales';
+import { useCompany } from '../../hooks/useCompany';
+import { generateCashReportPdf } from './utils/generateCashReportPdf';
 import { useAuthStore } from '../../store/useAuthStore';
 import { CashOpeningModal } from './components/CashOpeningModal';
 import { CashMovementModal } from './components/CashMovementModal';
@@ -18,6 +20,22 @@ function formatMovementTime(value: string): string {
     : date.toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' });
 }
 
+const PAYMENT_METHOD_META = [
+  { key: 'CASH', label: 'Efectivo', icon: '💵', color: '#16A34A', bg: '#F0FDF4', border: '#BBF7D0' },
+  { key: 'MERCADOPAGO', label: 'Mercado Pago QR', icon: '📱', color: '#009EE3', bg: '#E0F2FE', border: '#BAE6FD' },
+  { key: 'CUENTA_DNI', label: 'Cuenta DNI', icon: '🏦', color: '#008037', bg: '#DCFCE7', border: '#BBF7D0' },
+  { key: 'CARD', label: 'Tarjeta', icon: '💳', color: '#2563EB', bg: '#EFF6FF', border: '#BFDBFE' },
+  { key: 'TRANSFER', label: 'Transferencia', icon: '🔁', color: '#0284C7', bg: '#F0F9FF', border: '#BAE6FD' },
+  { key: 'CREDIT', label: 'Crédito Cliente', icon: '🧾', color: '#D97706', bg: '#FFFBEB', border: '#FDE68A' },
+] as const;
+
+function paymentMethodKey(p: { method: string; reference?: string }): string {
+  if (p.method === 'QR') {
+    return p.reference?.startsWith('CDNI-') ? 'CUENTA_DNI' : 'MERCADOPAGO';
+  }
+  return p.method;
+}
+
 export const CashView: React.FC = () => {
   const { data: session, isLoading: sessionLoading } = useCurrentCashSession();
   const { data: sales = [] } = useSales();
@@ -27,6 +45,7 @@ export const CashView: React.FC = () => {
   const createMovement = useCreateCashMovement();
   const cancelMovement = useCancelCashMovement();
   const { user, activeBranch, setCashSession } = useAuthStore();
+  const { data: company } = useCompany();
 
   const [showOpeningModal, setShowOpeningModal] = React.useState(false);
   const [movementType, setMovementType] = React.useState<'INCOME' | 'WITHDRAWAL'>('INCOME');
@@ -69,6 +88,27 @@ export const CashView: React.FC = () => {
     ? session.initialKioskAmount + session.initialCigaretteAmount + kioskCashSales + cigaretteCashSales + netIncome - netWithdrawals
     : 0;
 
+  const paymentBreakdown = sessionSales.reduce<Record<string, { sales: number; total: number }>>((acc, sale) => {
+    const seen = new Set<string>();
+    for (const p of sale.payments || []) {
+      const key = paymentMethodKey(p);
+      const row = (acc[key] = acc[key] || { sales: 0, total: 0 });
+      if (!seen.has(key)) {
+        seen.add(key);
+        row.sales += 1;
+      }
+      row.total += p.amount - (p.change || 0);
+    }
+    return acc;
+  }, {});
+
+  const totalInvoicedCount = sessionSales.filter((s) => s.fiscalInvoice?.cae).length;
+  const totalSalesAmount = sessionSales.reduce((acc, s) => acc + s.grandTotal, 0);
+  const totalCollectedAmount = sessionSales.reduce((acc, s) => {
+    const paid = (s.payments || []).reduce((a, p) => a + (p.amount - (p.change || 0)), 0);
+    return acc + paid;
+  }, 0);
+
   const handleOpenSession = (kioskAmount: number, cigaretteAmount: number) => {
     if (!user) return;
     const newSession: Omit<import('../../types').CashSession, 'id'> = {
@@ -107,14 +147,29 @@ export const CashView: React.FC = () => {
   const handleCloseSession = () => {
     if (!session) return;
     const calculated = totalCashInDrawer;
+    const finalAmount = parseFloat(closingAmount) || 0;
     closeCashSession.mutate({
       id: session.id,
       data: {
         isOpen: false,
         closedAt: new Date().toISOString(),
-        finalAmount: parseFloat(closingAmount) || 0,
+        finalAmount,
         calculatedTotal: calculated,
-        difference: (parseFloat(closingAmount) || 0) - calculated,
+        difference: finalAmount - calculated,
+        notes: 'Cierre de caja',
+      },
+    }, {
+      onSuccess: () => {
+        generateCashReportPdf({
+          company,
+          session,
+          sales: sessionSales,
+          movements,
+          branchName: activeBranch?.name,
+          closingAmount: finalAmount,
+          calculatedTotal: calculated,
+          difference: finalAmount - calculated,
+        });
       },
     });
   };
@@ -435,6 +490,64 @@ export const CashView: React.FC = () => {
             </Table>
           </Paper>
         </Grid>
+      </Grid>
+
+      {/* Ventas del Turno: resumen por medio de pago */}
+      <Grid size={{ xs: 12 }}>
+        <Paper elevation={1} sx={{ borderRadius: 4, border: '2px solid #E2E8F0', bgcolor: '#FFFFFF', p: 3 }}>
+          <Typography variant="h5" sx={{ fontWeight: 900, mb: 2, color: '#0F172A', display: 'flex', alignItems: 'center', gap: 1 }}>
+            <BarChart3 size={24} color="#2563EB" /> Ventas del Turno
+          </Typography>
+          <Divider sx={{ mb: 2.5, borderColor: '#E2E8F0' }} />
+
+          <Grid container spacing={2} sx={{ mb: 2.5 }}>
+            <Grid size={{ xs: 12, sm: 4 }}>
+              <Paper sx={{ p: 2, borderRadius: 3, bgcolor: '#F8FAFC', textAlign: 'center', border: '1px solid #E2E8F0' }}>
+                <Typography variant="caption" sx={{ fontWeight: 800, color: '#64748B', textTransform: 'uppercase' }}>Cantidad de ventas</Typography>
+                <Typography variant="h4" sx={{ fontWeight: 900, color: '#0F172A' }}>{sessionSales.length}</Typography>
+              </Paper>
+            </Grid>
+            <Grid size={{ xs: 12, sm: 4 }}>
+              <Paper sx={{ p: 2, borderRadius: 3, bgcolor: '#FFF7ED', textAlign: 'center', border: '1px solid #FED7AA' }}>
+                <Typography variant="caption" sx={{ fontWeight: 800, color: '#9A3412', textTransform: 'uppercase' }}>Facturas emitidas (ARCA)</Typography>
+                <Typography variant="h4" sx={{ fontWeight: 900, color: '#9A3412' }}>{totalInvoicedCount}</Typography>
+              </Paper>
+            </Grid>
+            <Grid size={{ xs: 12, sm: 4 }}>
+              <Paper sx={{ p: 2, borderRadius: 3, bgcolor: '#F0FDF4', textAlign: 'center', border: '1px solid #BBF7D0' }}>
+                <Typography variant="caption" sx={{ fontWeight: 800, color: '#166534', textTransform: 'uppercase' }}>Total vendido</Typography>
+                <Typography variant="h4" sx={{ fontWeight: 900, color: '#15803D' }}>${totalSalesAmount.toFixed(2)}</Typography>
+              </Paper>
+            </Grid>
+          </Grid>
+
+          <Table size="small">
+            <TableHead sx={{ bgcolor: '#F8FAFC' }}>
+              <TableRow>
+                <TableCell sx={{ fontWeight: 800 }}>Medio de pago</TableCell>
+                <TableCell align="center" sx={{ fontWeight: 800 }}>Ventas</TableCell>
+                <TableCell align="right" sx={{ fontWeight: 800 }}>Total cobrado</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {PAYMENT_METHOD_META.map((m) => {
+                const row = paymentBreakdown[m.key];
+                return (
+                  <TableRow key={m.key} hover>
+                    <TableCell sx={{ fontWeight: 700 }}>{m.icon} {m.label}</TableCell>
+                    <TableCell align="center" sx={{ fontWeight: 800 }}>{row?.sales || 0}</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 900, color: m.color }}>${(row?.total || 0).toFixed(2)}</TableCell>
+                  </TableRow>
+                );
+              })}
+              <TableRow sx={{ bgcolor: '#F0FDF4' }}>
+                <TableCell sx={{ fontWeight: 900, color: '#166534' }}>TOTAL COBRADO</TableCell>
+                <TableCell align="center" sx={{ fontWeight: 900, color: '#166534' }}>{sessionSales.length}</TableCell>
+                <TableCell align="right" sx={{ fontWeight: 900, color: '#15803D' }}>${totalCollectedAmount.toFixed(2)}</TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
+        </Paper>
       </Grid>
 
       <CashMovementModal

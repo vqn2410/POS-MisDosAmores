@@ -26,27 +26,76 @@ import {
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { useProducts } from '../../hooks/useProducts';
 import { useSales } from '../../hooks/useSales';
-import { useCurrentCashSession } from '../../hooks/useCashSessions';
+import { useCurrentCashSession, useCashMovements } from '../../hooks/useCashSessions';
 import { useCustomers } from '../../hooks/useCustomers';
+import type { Product, Sale, CartItem } from '../../types';
+
+function toDate(value: unknown): Date {
+  if (value instanceof Date) return value;
+  if (value && typeof value === 'object' && typeof (value as { toDate?: unknown }).toDate === 'function') {
+    return (value as { toDate: () => Date }).toDate();
+  }
+  return new Date(value as string);
+}
 
 export const DashboardView: React.FC = () => {
   const { data: products = [], isLoading: productsLoading } = useProducts();
   const { data: sales = [], isLoading: salesLoading } = useSales();
   const { data: cashSession } = useCurrentCashSession();
+  const { data: movements = [] } = useCashMovements(cashSession?.id);
   const { data: customers = [] } = useCustomers();
 
   const todaySales = sales.filter((s) => {
-    const saleDate = new Date(s.createdAt);
+    const saleDate = toDate(s.createdAt);
     const today = new Date();
     return saleDate.toDateString() === today.toDateString() && s.status === 'COMPLETED';
   });
 
+  const itemQty = (i: CartItem) => (i.saleType === 'WEIGHT' && i.weightKg ? i.weightKg : i.quantity);
+
   const totalRevenue = todaySales.reduce((sum, s) => sum + s.grandTotal, 0);
-  const totalItems = todaySales.reduce((sum, s) => sum + s.items.reduce((isum, i) => isum + (i.saleType === 'WEIGHT' && i.weightKg ? i.weightKg : i.quantity), 0), 0);
-  const totalCost = todaySales.reduce((sum, s) => sum + s.items.reduce((isum, i) => isum + ((i.product.costPrice || 0) * i.quantity), 0), 0);
+  const totalItems = todaySales.reduce((sum, s) => sum + s.items.reduce((isum, i) => isum + itemQty(i), 0), 0);
+  const totalCost = todaySales.reduce((sum, s) => sum + s.items.reduce((isum, i) => isum + ((i.product.costPrice || 0) * itemQty(i)), 0), 0);
   const totalProfit = totalRevenue - totalCost;
   const outOfStockProducts = products.filter((p) => p.stock === 0);
   const lowStockProducts = products.filter((p) => p.stock > 0 && p.stock <= p.minStock);
+
+  // Caja actual: fondo inicial + ventas en efectivo del turno + movimientos (mismo calculo que el arqueo)
+  const sessionSales = sales.filter((s) => s.cashSessionId === cashSession?.id && s.status === 'COMPLETED');
+  const cashOf = (s: Sale) =>
+    (s.payments || []).filter((p) => p.method === 'CASH').reduce((acc, p) => acc + (p.amount - (p.change || 0)), 0);
+  const kioskCashSales = sessionSales.reduce((sum, s) => {
+    const kioskTotal = s.items
+      .filter((i) => i.product.cashBoxType === 'KIOSK' || !i.product.cashBoxType)
+      .reduce((acc, i) => acc + i.total, 0);
+    const share = s.subtotal > 0 ? kioskTotal / s.subtotal : 0;
+    return sum + cashOf(s) * share;
+  }, 0);
+  const cigaretteCashSales = sessionSales.reduce((sum, s) => {
+    const cigTotal = s.items
+      .filter((i) => i.product.cashBoxType === 'CIGARRILLOS')
+      .reduce((acc, i) => acc + i.total, 0);
+    const share = s.subtotal > 0 ? cigTotal / s.subtotal : 0;
+    return sum + cashOf(s) * share;
+  }, 0);
+  const netIncome = movements.filter((m) => m.status !== 'CANCELLED' && m.type === 'INCOME').reduce((sum, m) => sum + m.amount, 0);
+  const netWithdrawals = movements.filter((m) => m.status !== 'CANCELLED' && m.type === 'WITHDRAWAL').reduce((sum, m) => sum + m.amount, 0);
+  const totalCashInDrawer = cashSession
+    ? cashSession.initialKioskAmount + cashSession.initialCigaretteAmount + kioskCashSales + cigaretteCashSales + netIncome - netWithdrawals
+    : 0;
+
+  const topProducts = (() => {
+    const map = new Map<string, { product: Product; quantity: number; total: number }>();
+    for (const s of todaySales) {
+      for (const i of s.items) {
+        const row = map.get(i.product.id) || { product: i.product, quantity: 0, total: 0 };
+        row.quantity += itemQty(i);
+        row.total += i.total;
+        map.set(i.product.id, row);
+      }
+    }
+    return [...map.values()].sort((a, b) => b.quantity - a.quantity).slice(0, 4);
+  })();
 
   const chartData = (() => {
     const slots = [
@@ -59,12 +108,12 @@ export const DashboardView: React.FC = () => {
     ];
     return slots.map((slot) => {
       const filtered = todaySales.filter((s) => {
-        const h = new Date(s.createdAt).getHours();
+        const h = toDate(s.createdAt).getHours();
         return h >= slot.min && h < slot.max;
       });
       const ventas = filtered.reduce((sum, s) => sum + s.grandTotal, 0);
       const utilidad = filtered.reduce((sum, s) => {
-        const cost = s.items.reduce((acc, i) => acc + ((i.product.costPrice || 0) * i.quantity), 0);
+        const cost = s.items.reduce((acc, i) => acc + ((i.product.costPrice || 0) * itemQty(i)), 0);
         return sum + (s.grandTotal - cost);
       }, 0);
       return { time: slot.label, ventas, utilidad };
@@ -77,7 +126,7 @@ export const DashboardView: React.FC = () => {
     { title: 'Ventas del Dia', value: `$${totalRevenue.toFixed(2)}`, change: `${todaySales.length} ventas`, isPositive: true, icon: DollarSign, color: '#2563EB' },
     { title: 'Productos Vendidos', value: `${totalItems.toFixed(1)}`, change: `${todaySales.length} tickets`, isPositive: true, icon: ShoppingCart, color: '#16A34A' },
     { title: 'Utilidad Neta', value: `$${totalProfit.toFixed(2)}`, change: totalRevenue > 0 ? `${((totalProfit / totalRevenue) * 100).toFixed(1)}% margen` : 'Sin datos', isPositive: totalProfit >= 0, icon: TrendingUp, color: '#7C3AED' },
-    { title: 'Caja Actual', value: cashSession ? `$${(cashSession.initialKioskAmount + cashSession.initialCigaretteAmount).toFixed(2)}` : '$0.00', change: cashSession ? 'Turno Abierto' : 'Sin sesion', isPositive: !!cashSession, icon: Wallet, color: '#D97706' },
+    { title: 'Caja Actual', value: `$${totalCashInDrawer.toFixed(2)}`, change: cashSession ? 'Turno Abierto' : 'Sin sesion', isPositive: !!cashSession, icon: Wallet, color: '#D97706' },
     { title: 'Clientes Registrados', value: `${customers.length}`, change: `${customers.length} en directorio`, isPositive: true, icon: ShoppingCart, color: '#0284C7' },
     { title: 'Productos Agotados', value: `${outOfStockProducts.length} items`, change: outOfStockProducts.length > 0 ? 'Atencion' : 'OK', isPositive: outOfStockProducts.length === 0, icon: PackageX, color: '#DC2626' },
     { title: 'Stock Minimo Alerta', value: `${lowStockProducts.length} items`, change: lowStockProducts.length > 0 ? 'Reorden' : 'OK', isPositive: lowStockProducts.length === 0, icon: AlertTriangle, color: '#D97706' },
@@ -237,12 +286,12 @@ export const DashboardView: React.FC = () => {
               Top Productos
             </Typography>
             <List dense disablePadding>
-              {products.length === 0 ? (
+              {topProducts.length === 0 ? (
                 <Typography variant="body2" sx={{ p: 2, textAlign: 'center', color: '#64748B' }}>
-                  No hay productos registrados
+                  Sin ventas registradas hoy
                 </Typography>
               ) : (
-                products.slice(0, 4).map((product, index) => (
+                topProducts.map(({ product, quantity, total }, index) => (
                   <React.Fragment key={product.id}>
                     <ListItem disableGutters sx={{ py: 1.5 }}>
                       <ListItemAvatar>
@@ -250,7 +299,7 @@ export const DashboardView: React.FC = () => {
                       </ListItemAvatar>
                       <ListItemText
                         primary={product.name}
-                        secondary={`Stock: ${product.stock} pzas - SKU: ${product.sku}`}
+                        secondary={`${Number.isInteger(quantity) ? quantity : quantity.toFixed(1)} vendidos - $${total.toFixed(2)}`}
                         slotProps={{
                           primary: { variant: 'subtitle1', sx: { fontWeight: 800, fontSize: '1rem', color: '#0F172A' } },
                           secondary: { variant: 'body2', sx: { color: '#64748B' } },

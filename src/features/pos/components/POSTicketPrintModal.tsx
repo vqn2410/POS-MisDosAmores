@@ -5,6 +5,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import type { Sale, FiscalInvoice } from '../../../types';
 import { useCompany } from '../../../hooks/useCompany';
 import { getArcaConfig, type ArcaConfig } from '../../../services/arcaApi';
+import { paymentMethodLabel } from '../utils/paymentLabels';
 
 interface POSTicketPrintModalProps {
   sale: Sale | null;
@@ -194,7 +195,7 @@ export const POSTicketPrintModal: React.FC<POSTicketPrintModalProps> = ({ sale, 
             font-size: 10px !important;
             line-height: 1.25 !important;
             }
-           .ticket-print-space { height: 20mm !important; }
+           .ticket-print-space { height: 40mm !important; }
         }
       `}</style>
       <DialogTitle sx={{ fontWeight: 900, textAlign: 'center', fontSize: '1.4rem' }}>
@@ -333,6 +334,19 @@ export const POSTicketPrintModal: React.FC<POSTicketPrintModalProps> = ({ sale, 
             <span>TOTAL:</span>
             <span>${sale.grandTotal.toFixed(2)}</span>
           </Box>
+          {sale.payments && sale.payments.length > 0 && (
+            <Box sx={{ mt: 1 }}>
+              <Typography className="ticket-detail" variant="caption" sx={{ display: 'block', fontWeight: 800 }}>
+                FORMA DE PAGO:
+              </Typography>
+              {sale.payments.map((p, idx) => (
+                <Box key={idx} className="ticket-total-row" sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>{paymentMethodLabel(p)}</span>
+                  <span>${p.amount.toFixed(2)}</span>
+                </Box>
+              ))}
+            </Box>
+          )}
           {sale.payments && sale.payments.reduce((sum, p) => sum + (p.method === 'CASH' ? p.change || 0 : 0), 0) > 0 && (
             <Box className="ticket-total-row" sx={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700 }}>
               <span>Vuelto:</span>

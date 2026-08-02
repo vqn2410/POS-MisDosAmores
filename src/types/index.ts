@@ -209,6 +209,7 @@ export type InventoryMovementType =
   | 'IN_PURCHASE'
   | 'IN_ADJUSTMENT'
   | 'IN_TRANSFER'
+  | 'IN_RETURN'
   | 'OUT_SALE'
   | 'OUT_ADJUSTMENT'
   | 'OUT_TRANSFER'

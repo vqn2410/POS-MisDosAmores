@@ -15,15 +15,18 @@ import {
   DialogContent,
   DialogActions,
   CircularProgress,
+  useTheme,
+  useMediaQuery,
 } from '@mui/material';
 import { Download, CheckCircle2, Receipt, XCircle, Printer, ArrowLeft } from 'lucide-react';
 import { useSales, useUpdateSale } from '../../hooks/useSales';
-import { useUpdateProduct } from '../../hooks/useProducts';
+import { useRegisterBulkKardex } from '../../hooks/useKardex';
 import { POSTicketPrintModal } from '../pos/components/POSTicketPrintModal';
 import { createArcaInvoice } from '../../services/arcaApi';
 import { useNotificationStore } from '../../store/useNotificationStore';
 import type { Sale, FiscalInvoice } from '../../types';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
+import { paymentMethodLabel } from '../pos/utils/paymentLabels';
 
 const CREDIT_NOTE_TYPES: Record<number, number> = { 1: 3, 3: 1, 6: 8, 8: 6, 11: 13, 13: 11, 2: 5, 5: 2, 109: 110, 110: 109 };
 
@@ -36,12 +39,24 @@ function formatIssuedAt(value: unknown): string {
     : date.toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' });
 }
 
+const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
+  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2, py: 1, borderBottom: '1px solid', borderColor: '#F1F5F9' }}>
+    <Typography variant="caption" sx={{ fontWeight: 800, color: '#64748B', textTransform: 'uppercase', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>
+      {label}
+    </Typography>
+    <Box sx={{ textAlign: 'right', minWidth: 0 }}>{children}</Box>
+  </Box>
+);
+
 export const BillingView: React.FC = () => {
   const { data: sales = [] } = useSales();
   const setActiveTab = useWorkspaceStore((state) => state.setActiveTab);
 
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+
   const updateSale = useUpdateSale();
-  const updateProduct = useUpdateProduct();
+  const registerBulkKardex = useRegisterBulkKardex();
 
   const [cancelTargetId, setCancelTargetId] = React.useState<string | null>(null);
   const [invoiceTargetId, setInvoiceTargetId] = React.useState<string | null>(null);
@@ -123,13 +138,11 @@ export const BillingView: React.FC = () => {
       { id: sale.id, data: updates },
       {
         onSuccess: () => {
-          sale.items.forEach((item) => {
-            if (item.product.tracksStock !== false && !item.isVariableProduct) {
-              updateProduct.mutate({
-                id: item.product.id,
-                data: { stock: (item.product.stock || 0) + item.quantity },
-              });
-            }
+          registerBulkKardex.mutate({
+            items: sale.items,
+            type: 'IN_RETURN',
+            reference: `REVERSION-${sale.ticketNumber}`,
+            notes: 'Reintegro de stock por anulacion / nota de credito',
           });
           setCancelTargetId(null);
         },
@@ -210,6 +223,52 @@ export const BillingView: React.FC = () => {
   };
   });
 
+  const renderActions = (c: (typeof comprobantes)[number], align: 'flex-start' | 'flex-end' = 'flex-end') => (
+    <Box sx={{ display: 'flex', gap: 1, justifyContent: align, flexWrap: 'wrap' }}>
+      <Button
+        size="small"
+        variant="outlined"
+        startIcon={<Printer size={16} />}
+        onClick={() => {
+          const sale = sales.find((item) => item.id === c.id);
+          if (sale) setPrintSale(sale);
+        }}
+        sx={{ borderRadius: 2.5, fontWeight: 800, minHeight: 36 }}
+      >
+        Imprimir
+      </Button>
+      {needsInvoice(c.id) && (
+        <Button
+          size="small"
+          variant="contained"
+          color="primary"
+          startIcon={<Receipt size={16} />}
+          onClick={() => setInvoiceTargetId(c.id)}
+          sx={{ borderRadius: 2.5, fontWeight: 800, minHeight: 36 }}
+        >
+          Facturar
+        </Button>
+      )}
+      {c.rawStatus === 'COMPLETED' && (
+        <Button
+          size="small"
+          variant="outlined"
+          color="error"
+          startIcon={<XCircle size={16} />}
+          onClick={() => setCancelTargetId(c.id)}
+          sx={{ borderRadius: 2.5, fontWeight: 800, minHeight: 36 }}
+        >
+          Anular
+        </Button>
+      )}
+      {c.hasFiles ? (
+        <Button size="small" variant="outlined" startIcon={<Download size={16} />} sx={{ borderRadius: 2.5, fontWeight: 800, minHeight: 36 }}>
+          PDF / XML
+        </Button>
+      ) : null}
+    </Box>
+  );
+
   return (
     <><Box sx={{ p: 3, bgcolor: '#FFFFFF' }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
@@ -238,113 +297,142 @@ export const BillingView: React.FC = () => {
         <Receipt size={26} color="#16A34A" /> Historial de Comprobantes Emitidos
       </Typography>
 
-      <Paper elevation={1} sx={{ borderRadius: 4, overflow: 'hidden', border: '2px solid', borderColor: '#E2E8F0', bgcolor: '#FFFFFF' }}>
-        <Table>
-          <TableHead sx={{ bgcolor: '#F8FAFC' }}>
-            <TableRow>
-               <TableCell sx={{ fontWeight: 800, fontSize: '1rem' }}>Ticket</TableCell>
-               <TableCell sx={{ fontWeight: 800, fontSize: '1rem' }}>Fecha y hora de emisión</TableCell>
-               <TableCell sx={{ fontWeight: 800, fontSize: '1rem' }}>Cliente</TableCell>
-               <TableCell sx={{ fontWeight: 800, fontSize: '1rem' }}>Tipo</TableCell>
-               <TableCell sx={{ fontWeight: 800, fontSize: '1rem' }}>N° AFIP</TableCell>
-               <TableCell sx={{ fontWeight: 800, fontSize: '1rem' }}>Monto</TableCell>
-              <TableCell sx={{ fontWeight: 800, fontSize: '1rem' }}>Estado</TableCell>
-              <TableCell sx={{ fontWeight: 800, fontSize: '1rem' }}>CAE / UUID</TableCell>
-              <TableCell align="right" sx={{ fontWeight: 800, fontSize: '1rem' }}>Acción</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {comprobantes.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={9} align="center" sx={{ py: 4 }}>
-                  <Typography variant="body1" color="text.secondary" sx={{ fontWeight: 600 }}>
-                    No hay comprobantes emitidos aún.
-                  </Typography>
-                </TableCell>
-              </TableRow>
-            ) : (
-              comprobantes.map((c) => (
-                <TableRow key={c.id} hover sx={{ minHeight: 64 }}>
-                  <TableCell sx={{ fontWeight: 700, fontFamily: 'monospace' }}>{c.ticketNumber}</TableCell>
-                  <TableCell sx={{ whiteSpace: 'nowrap', color: '#475569', fontWeight: 600 }}>
-                    {formatIssuedAt(c.createdAt)}
-                  </TableCell>
-                  <TableCell>
-                    <Typography variant="body1" sx={{ fontWeight: 800 }}>{c.receiverName}</Typography>
-                  </TableCell>
-                  <TableCell>
+      {isMobile ? (
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {comprobantes.length === 0 ? (
+            <Paper elevation={1} sx={{ p: 4, borderRadius: 4, border: '2px solid', borderColor: '#E2E8F0', textAlign: 'center', bgcolor: '#FFFFFF' }}>
+              <Typography variant="body1" color="text.secondary" sx={{ fontWeight: 600 }}>
+                No hay comprobantes emitidos aún.
+              </Typography>
+            </Paper>
+          ) : (
+            comprobantes.map((c) => {
+              const sale = sales.find((s) => s.id === c.id);
+              const payments = sale?.payments || [];
+              return (
+                <Paper key={c.id} elevation={1} sx={{ p: 2.5, borderRadius: 4, border: '2px solid', borderColor: '#E2E8F0', bgcolor: '#FFFFFF' }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1, mb: 1.5 }}>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 900, fontFamily: 'monospace' }}>{c.ticketNumber}</Typography>
+                    <Chip label={c.status} color={statusColor(sale!)} size="small" sx={{ fontWeight: 800 }} />
+                  </Box>
+                  <Field label="Fecha y hora de emisión">
+                    <Typography variant="body2" sx={{ fontWeight: 700, color: '#475569' }}>{formatIssuedAt(c.createdAt)}</Typography>
+                  </Field>
+                  <Field label="Cliente">
+                    <Typography variant="body2" sx={{ fontWeight: 800 }}>{c.receiverName}</Typography>
+                  </Field>
+                  <Field label="Tipo">
                     {c.type === 'ARCA' ? (
                       <Chip label="ARCA" color="primary" size="small" sx={{ fontWeight: 800, borderRadius: 2 }} />
                     ) : (
                       <Chip label="Interno" variant="outlined" color="default" size="small" sx={{ fontWeight: 800, borderRadius: 2, borderColor: '#94A3B8', color: '#475569' }} />
                     )}
-                  </TableCell>
-                  <TableCell>
-                    <Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 800, color: '#0F172A' }}>
+                  </Field>
+                  <Field label="Medio de pago">
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, justifyContent: 'flex-end' }}>
+                      {payments.length === 0 ? (
+                        <Typography variant="body2" sx={{ color: '#64748B', fontWeight: 600 }}>—</Typography>
+                      ) : (
+                        payments.map((p, i) => (
+                          <Chip key={i} label={paymentMethodLabel(p)} size="small" variant="outlined" sx={{ fontWeight: 800 }} />
+                        ))
+                      )}
+                    </Box>
+                  </Field>
+                  <Field label="N° AFIP">
+                    <Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 800 }}>
                       {c.voucherNumber ? String(c.voucherNumber).padStart(8, '0') : '—'}
                     </Typography>
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 900, color: '#2563EB', fontSize: '1.15rem' }}>${c.total.toFixed(2)}</TableCell>
-                  <TableCell>
-                    <Chip label={c.status} color={statusColor(sales.find(s => s.id === c.id)!)}
-                      size="medium" sx={{ fontWeight: 800 }} />
-                  </TableCell>
-                  <TableCell>
-                    <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 600, color: '#64748B' }}>
+                  </Field>
+                  <Field label="Monto">
+                    <Typography variant="body1" sx={{ fontWeight: 900, color: '#2563EB', fontSize: '1.15rem' }}>${c.total.toFixed(2)}</Typography>
+                  </Field>
+                  <Field label="CAE / UUID">
+                    <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 600, color: '#64748B', wordBreak: 'break-all' }}>
                       {c.cae || '—'}
                     </Typography>
-                  </TableCell>
-                  <TableCell align="right">
-                    <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        startIcon={<Printer size={16} />}
-                        onClick={() => {
-                          const sale = sales.find((item) => item.id === c.id);
-                          if (sale) setPrintSale(sale);
-                        }}
-                        sx={{ borderRadius: 2.5, fontWeight: 800, minHeight: 36 }}
-                      >
-                        Imprimir
-                      </Button>
-                      {needsInvoice(c.id) && (
-                        <Button
-                          size="small"
-                          variant="contained"
-                          color="primary"
-                          startIcon={<Receipt size={16} />}
-                          onClick={() => setInvoiceTargetId(c.id)}
-                          sx={{ borderRadius: 2.5, fontWeight: 800, minHeight: 36 }}
-                        >
-                          Facturar
-                        </Button>
-                      )}
-                      {c.rawStatus === 'COMPLETED' && (
-                        <Button
-                          size="small"
-                          variant="outlined"
-                          color="error"
-                          startIcon={<XCircle size={16} />}
-                          onClick={() => setCancelTargetId(c.id)}
-                          sx={{ borderRadius: 2.5, fontWeight: 800, minHeight: 36 }}
-                        >
-                          Anular
-                        </Button>
-                      )}
-                      {c.hasFiles ? (
-                        <Button size="small" variant="outlined" startIcon={<Download size={16} />} sx={{ borderRadius: 2.5, fontWeight: 800, minHeight: 36 }}>
-                          PDF / XML
-                        </Button>
-                      ) : null}
-                    </Box>
+                  </Field>
+                  <Box sx={{ mt: 2 }}>{renderActions(c, 'flex-start')}</Box>
+                </Paper>
+              );
+            })
+          )}
+        </Box>
+      ) : (
+        <Paper elevation={1} sx={{ borderRadius: 4, overflow: 'hidden', border: '2px solid', borderColor: '#E2E8F0', bgcolor: '#FFFFFF' }}>
+          <Table>
+            <TableHead sx={{ bgcolor: '#F8FAFC' }}>
+              <TableRow>
+                <TableCell sx={{ fontWeight: 800, fontSize: '1rem' }}>Ticket</TableCell>
+                <TableCell sx={{ fontWeight: 800, fontSize: '1rem' }}>Fecha y hora de emisión</TableCell>
+                <TableCell sx={{ fontWeight: 800, fontSize: '1rem' }}>Cliente</TableCell>
+                <TableCell sx={{ fontWeight: 800, fontSize: '1rem' }}>Tipo</TableCell>
+                <TableCell sx={{ fontWeight: 800, fontSize: '1rem' }}>Medio de pago</TableCell>
+                <TableCell sx={{ fontWeight: 800, fontSize: '1rem' }}>N° AFIP</TableCell>
+                <TableCell sx={{ fontWeight: 800, fontSize: '1rem' }}>Monto</TableCell>
+                <TableCell sx={{ fontWeight: 800, fontSize: '1rem' }}>Estado</TableCell>
+                <TableCell sx={{ fontWeight: 800, fontSize: '1rem' }}>CAE / UUID</TableCell>
+                <TableCell align="right" sx={{ fontWeight: 800, fontSize: '1rem' }}>Acción</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {comprobantes.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={10} align="center" sx={{ py: 4 }}>
+                    <Typography variant="body1" color="text.secondary" sx={{ fontWeight: 600 }}>
+                      No hay comprobantes emitidos aún.
+                    </Typography>
                   </TableCell>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </Paper>
+              ) : (
+                comprobantes.map((c) => (
+                  <TableRow key={c.id} hover sx={{ minHeight: 64 }}>
+                    <TableCell sx={{ fontWeight: 700, fontFamily: 'monospace' }}>{c.ticketNumber}</TableCell>
+                    <TableCell sx={{ whiteSpace: 'nowrap', color: '#475569', fontWeight: 600 }}>
+                      {formatIssuedAt(c.createdAt)}
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body1" sx={{ fontWeight: 800 }}>{c.receiverName}</Typography>
+                    </TableCell>
+                    <TableCell>
+                      {c.type === 'ARCA' ? (
+                        <Chip label="ARCA" color="primary" size="small" sx={{ fontWeight: 800, borderRadius: 2 }} />
+                      ) : (
+                        <Chip label="Interno" variant="outlined" color="default" size="small" sx={{ fontWeight: 800, borderRadius: 2, borderColor: '#94A3B8', color: '#475569' }} />
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                        {(sales.find((s) => s.id === c.id)?.payments || []).map((p, i) => (
+                          <Chip key={i} label={paymentMethodLabel(p)} size="small" variant="outlined" sx={{ fontWeight: 800 }} />
+                        ))}
+                      </Box>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 800, color: '#0F172A' }}>
+                        {c.voucherNumber ? String(c.voucherNumber).padStart(8, '0') : '—'}
+                      </Typography>
+                    </TableCell>
+                    <TableCell sx={{ fontWeight: 900, color: '#2563EB', fontSize: '1.15rem' }}>${c.total.toFixed(2)}</TableCell>
+                    <TableCell>
+                      <Chip label={c.status} color={statusColor(sales.find(s => s.id === c.id)!)}
+                        size="medium" sx={{ fontWeight: 800 }} />
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 600, color: '#64748B' }}>
+                        {c.cae || '—'}
+                      </Typography>
+                    </TableCell>
+                    <TableCell align="right">
+                      {renderActions(c, 'flex-end')}
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </Paper>
+      )}
       </Box>
 
       <Dialog open={!!cancelTargetId} onClose={() => setCancelTargetId(null)} maxWidth="xs" fullWidth>

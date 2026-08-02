@@ -31,6 +31,7 @@ import { useCommandPaletteStore } from '../../store/useCommandPaletteStore';
 import { useNotificationStore } from '../../store/useNotificationStore';
 import { LoginModal } from '../../features/auth/components/LoginModal';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
+import { ApiStatusChips } from './ApiStatusChips';
 
 export const Header: React.FC = () => {
   const { branches, activeBranch, setActiveBranch, user, cashSession } = useAuthStore();
@@ -160,6 +161,8 @@ export const Header: React.FC = () => {
                 }}
               />
             )}
+
+            <ApiStatusChips />
           </Box>
 
           {/* Center Global Search Trigger (CTRL+K) */}

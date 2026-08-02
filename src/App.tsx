@@ -27,8 +27,10 @@ import { ProductNotFoundAlert } from './features/pos/components/ProductNotFoundA
 import { LoginModal } from './features/auth/components/LoginModal';
 import { usePOSStore } from './features/pos/store/usePOSStore';
 import { parseQuickVariableProduct } from './features/pos/utils/parseQuickVariableProduct';
+import { parseQuickProductQuantity } from './features/pos/utils/parseQuickProductQuantity';
 import { useNotificationStore } from './store/useNotificationStore';
 import { useAccessibilityStore } from './store/useAccessibilityStore';
+import { AutomaticCashClose } from './features/cash/components/AutomaticCashClose';
 
 const DashboardView = React.lazy(async () => ({ default: (await import('./features/dashboard/DashboardView')).DashboardView }));
 const ProductsView = React.lazy(async () => ({ default: (await import('./features/products/ProductsView')).ProductsView }));
@@ -56,7 +58,7 @@ export const App: React.FC = () => {
 };
 
 const AppContent: React.FC = () => {
-  const { activeTabId, isSidebarVisible, showSidebar } = useWorkspaceStore();
+  const { activeTabId, isSidebarVisible, showSidebar, hideSidebar, setActiveTab } = useWorkspaceStore();
   const { isAuthenticated, isLoading, setUser, setLoading, setCashSession } = useAuthStore();
   const { addProductToCart, addVariableProductToCart } = usePOSStore();
   const { addNotification } = useNotificationStore();
@@ -192,6 +194,33 @@ const AppContent: React.FC = () => {
       showSidebar();
       setIsScannerOpen(false);
       return;
+    }
+
+    if (trimmed.toLowerCase() === 'ocultar') {
+      setActiveTab('pos');
+      hideSidebar();
+      setIsScannerOpen(false);
+      return;
+    }
+
+    // 0b. Check quantity . product code "1.123456"
+    const qtyResult = parseQuickProductQuantity(trimmed);
+    if (qtyResult.isValid) {
+      const qtyTargetProduct = products.find(
+        (p) => p.barcode === qtyResult.code || p.sku.toLowerCase() === qtyResult.code.toLowerCase()
+      );
+      if (qtyTargetProduct) {
+        if (qtyTargetProduct.saleType !== 'WEIGHT') {
+          addProductToCart(qtyTargetProduct, qtyResult.quantity);
+          addNotification({
+            title: 'Producto Agregado',
+            message: `${qtyTargetProduct.name} × ${qtyResult.quantity} agregado al ticket`,
+            type: 'success',
+          });
+        }
+        if (!isQuickSaleMode) setIsScannerOpen(false);
+        return;
+      }
     }
 
     // 1. Check quick expression "2x2000"
@@ -349,6 +378,7 @@ const AppContent: React.FC = () => {
       <CssBaseline />
       <HotkeysListener />
       <CommandPaletteModal />
+      <AutomaticCashClose />
 
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
         {/* Top App Header */}

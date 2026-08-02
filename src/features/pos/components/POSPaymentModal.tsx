@@ -32,6 +32,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { usePOSStore } from '../store/usePOSStore';
 import { useNotificationStore } from '../../../store/useNotificationStore';
 import { useCreateSale } from '../../../hooks/useSales';
+import { useRegisterBulkKardex } from '../../../hooks/useKardex';
 import { getNextTicketNumber } from '../../../services/ticketCounterService';
 import { CuentaDniPaymentProvider, type CuentaDniPaymentResult } from '../../payments/providers/CuentaDniPaymentProvider';
 import { FiscalRulesEngine } from '../../billing/services/FiscalRulesEngine';
@@ -56,6 +57,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
     usePOSStore();
   const { addNotification } = useNotificationStore();
   const createSale = useCreateSale();
+  const registerBulkKardex = useRegisterBulkKardex();
 
   const [selectedMethod, setSelectedMethod] = React.useState<ExtendedPaymentMethod>('CASH');
   const [payAmount, setPayAmount] = React.useState<string>('');
@@ -80,9 +82,8 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
   const mpPaymentAddedRef = React.useRef(false);
   const mpPendingRef = React.useRef(false);
 
-  // Cuenta DNI manual reference confirmation state
+  // Cuenta DNI manual confirmation state
   const [cdniPayment, setCdniPayment] = React.useState<CuentaDniPaymentResult | null>(null);
-  const [cdniRefInput, setCdniRefInput] = React.useState('');
 
   // Point Smart order state
   const [pointStatus, setPointStatus] = React.useState<'IDLE' | 'CREATING' | 'WAITING' | 'APPROVED' | 'ERROR'>('IDLE');
@@ -382,7 +383,6 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
         })
         .then((res) => {
           setCdniPayment(res);
-          setCdniRefInput('');
         });
     } else {
       if (mpPendingRef.current) {
@@ -410,34 +410,28 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
   };
 
   const handleConfirmCdni = async () => {
-    if (!cdniPayment || !cdniRefInput.trim()) {
-      addNotification({
-        title: 'Referencia requerida',
-        message: 'Ingrese el número de comprobante o referencia de Cuenta DNI.',
-        type: 'warning',
-      });
-      return;
-    }
+    if (!cdniPayment) return;
 
+    const referenceNumber = `MANUAL-${Date.now()}`;
     const confirmed = await cdniProvider.manuallyConfirmPayment(cdniPayment.id, {
-      referenceNumber: cdniRefInput.trim(),
+      referenceNumber,
       confirmedByUserId: usePOSStore.getState().customer.id || 'usr-unknown',
       confirmedByUserName: usePOSStore.getState().customer.name || 'Usuario',
     });
 
     setCdniPayment(confirmed);
-    const amt = amountForMethod;
+    const amt = chargeAmount;
     addPayment({
       method: 'QR',
       amount: amt,
-      reference: `CDNI-${confirmed.referenceNumber}`,
+      reference: `CDNI-${referenceNumber}`,
       change: 0,
-      surchargeAmount: computeSurcharge(amt, cdniPercent),
+      surchargeAmount: useCustomAmount ? 0 : computeSurcharge(amt, cdniPercent),
     });
 
     addNotification({
       title: 'Cuenta DNI Confirmado Manualmente',
-      message: `Referencia: ${confirmed.referenceNumber} verificada manualmente`,
+      message: 'El pago se asoció al ticket sin comprobación automática.',
       type: 'success',
     });
   };
@@ -510,6 +504,14 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
 
       const { id: _id, ...saleData } = sale;
       createSale.mutate(saleData as any, {
+        onSuccess: () => {
+          registerBulkKardex.mutate({
+            items: sale.items,
+            type: 'OUT_SALE',
+            reference: `VENTA-${ticketNumber}`,
+            notes: 'Descuento de stock por venta',
+          });
+        },
         onError: (err) => {
           console.error('Error guardando venta en Firestore:', err);
         },
@@ -871,7 +873,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
               </Paper>
             )}
 
-            {/* Cuenta DNI Manual Reference Flow */}
+            {/* Cuenta DNI Manual Confirmation Flow */}
             {selectedMethod === 'CUENTA_DNI' && (
               <Paper elevation={0} sx={{ p: 2.5, mb: 3, borderRadius: 3.5, bgcolor: '#F0FDF4', border: '2px solid #BBF7D0' }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, mb: 1 }}>
@@ -879,27 +881,47 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
                   <Typography variant="subtitle1" sx={{ fontWeight: 900, color: '#166534' }}>Cobro QR Cuenta DNI (Banco Provincia)</Typography>
                 </Box>
 
+                <Box sx={{ bgcolor: '#FFFFFF', borderRadius: 3, border: '1px solid #BBF7D0', p: 1.5, mb: 1.5 }}>
+                  <Typography variant="body2" sx={{ fontWeight: 800, color: '#15803D' }}>Monto a cobrar</Typography>
+                  <Typography variant="h3" sx={{ fontWeight: 900, color: '#166534' }}>${chargeAmount.toFixed(2)}</Typography>
+                </Box>
+
+                <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', justifyContent: 'center', mb: 1.5 }}>
+                  <Button
+                    variant={customAmountActive ? 'contained' : 'outlined'}
+                    size="small"
+                    disabled={cdniPayment?.status === 'MANUALLY_CONFIRMED'}
+                    onClick={() => setCustomAmountActive((v) => !v)}
+                    sx={{ borderRadius: 2.5, fontWeight: 800 }}
+                  >
+                    Otro monto
+                  </Button>
+                  {customAmountActive && (
+                    <TextField
+                      type="number"
+                      size="small"
+                      label="Monto final ($)"
+                      value={customAmount}
+                      onChange={(e) => setCustomAmount(e.target.value)}
+                      disabled={cdniPayment?.status === 'MANUALLY_CONFIRMED'}
+                      slotProps={{ input: { sx: { fontWeight: 800, bgcolor: '#FFFFFF' } } }}
+                      sx={{ maxWidth: 150 }}
+                    />
+                  )}
+                </Box>
+
                 {cdniPayment?.status === 'AWAITING_CONFIRMATION' && (
                   <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mt: 1.5 }}>
                     <Alert severity="warning" sx={{ borderRadius: 2.5, fontWeight: 700 }}>
-                      Muestre el QR de Cuenta DNI e ingrese la referencia o número de operación recibida.
+                      Muestre el QR de Cuenta DNI y, cuando el cliente haya abonado, confirme el pago manualmente.
                     </Alert>
-                    <TextField
-                      fullWidth
-                      size="small"
-                      label="Número de Operación / Referencia Cuenta DNI"
-                      placeholder="Ej. CDNI-982144"
-                      value={cdniRefInput}
-                      onChange={(e) => setCdniRefInput(e.target.value)}
-                      slotProps={{ input: { sx: { borderRadius: 2.5, bgcolor: '#FFFFFF', fontWeight: 800 } } }}
-                    />
                     <Button
                       variant="contained"
                       onClick={handleConfirmCdni}
                       startIcon={<CheckCheck size={18} />}
                       sx={{ borderRadius: 2.5, fontWeight: 900, bgcolor: '#008037', '&:hover': { bgcolor: '#00662C' } }}
                     >
-                      Confirmar Referencia Cuenta DNI (Verificar Pago)
+                      Confirmar pago manualmente
                     </Button>
                   </Box>
                 )}
@@ -908,7 +930,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
                   <Box sx={{ p: 1.5, bgcolor: '#DCFCE7', borderRadius: 2.5, border: '1px solid #86EFAC', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
                     <CheckCheck size={24} color="#16A34A" />
                     <Typography variant="body1" sx={{ fontWeight: 900, color: '#15803D' }}>
-                      Pago Confirmado Cuenta DNI (Ref: {cdniPayment.referenceNumber})
+                      Pago Confirmado Cuenta DNI
                     </Typography>
                   </Box>
                 )}

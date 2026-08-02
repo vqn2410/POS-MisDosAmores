@@ -83,6 +83,10 @@ export function getMercadoPagoStaticQr() {
   return request<{ qrData: string }>('/api/mercadopago/static-qr');
 }
 
+export function getMercadoPagoHealth() {
+  return request<{ configured: boolean }>('/api/mercadopago/health');
+}
+
 export function listMercadoPagoPointDevices() {
   return request<{ devices: MercadoPagoPointDevice[] }>('/api/mercadopago/point/devices');
 }

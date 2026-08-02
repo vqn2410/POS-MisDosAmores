@@ -25,6 +25,14 @@ import { useProducts } from '../../hooks/useProducts';
 import { useKardexMovements, useCreateKardexMovement } from '../../hooks/useKardex';
 import { useAuthStore } from '../../store/useAuthStore';
 
+function toDate(value: unknown): Date {
+  if (value instanceof Date) return value;
+  if (value && typeof value === 'object' && typeof (value as { toDate?: unknown }).toDate === 'function') {
+    return (value as { toDate: () => Date }).toDate();
+  }
+  return new Date(value as string);
+}
+
 export const InventoryView: React.FC = () => {
   const { data: movements = [], isLoading: movementsLoading } = useKardexMovements();
   const { data: products = [] } = useProducts();
@@ -126,7 +134,7 @@ export const InventoryView: React.FC = () => {
                 const isEntry = mov.type.startsWith('IN');
                 return (
                   <TableRow key={mov.id} hover sx={{ minHeight: 64 }}>
-                    <TableCell sx={{ fontWeight: 700 }}>{new Date(mov.createdAt).toLocaleString()}</TableCell>
+                    <TableCell sx={{ fontWeight: 700 }}>{toDate(mov.createdAt).toLocaleString()}</TableCell>
                     <TableCell>
                       <Chip
                         icon={isEntry ? <ArrowDownLeft size={16} /> : <ArrowUpRight size={16} />}

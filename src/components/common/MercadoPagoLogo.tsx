@@ -10,7 +10,7 @@ export const MercadoPagoLogo: React.FC<MercadoPagoLogoProps> = ({ height = 36, w
   return (
     <Box
       component="img"
-      src="/brands/mercado-pago-logo.svg"
+      src="/MP_RGB_HANDSHAKE_color_horizontal.png"
       alt="Mercado Pago Logo Oficial"
       sx={{
         height,

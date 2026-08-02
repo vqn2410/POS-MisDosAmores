@@ -10,7 +10,7 @@ export const CuentaDniLogo: React.FC<CuentaDniLogoProps> = ({ height = 36, width
   return (
     <Box
       component="img"
-      src="/brands/cuenta-dni-logo.svg"
+      src="/logoCDNI.png"
       alt="Cuenta DNI Logo Oficial"
       sx={{
         height,
