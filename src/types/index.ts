@@ -143,6 +143,21 @@ export interface FiscalInvoice {
   observations?: string[];
 }
 
+export interface CreditNote {
+  id: string;
+  voucherNumber: number;
+  voucherType: number;
+  salesPoint: number;
+  cae: string;
+  caeExpiration?: string;
+  amount: number;
+  associatedVoucher: { voucherType: number; salesPoint: number; voucherNumber: number };
+  source: 'SUBSANACION' | 'ANULACION';
+  saleId?: string;
+  ticketNumber?: string;
+  createdAt: string;
+}
+
 export interface CashMovement {
   id: string;
   cashSessionId: string;

@@ -27,6 +27,7 @@ import {
   FormControlLabel,
 } from '@mui/material';
 import { useSales, useUpdateSale } from '../../hooks/useSales';
+import { useCreditNotes, useCreateCreditNote } from '../../hooks/useCreditNotes';
 import { useRegisterBulkKardex } from '../../hooks/useKardex';
 import { POSTicketPrintModal } from '../pos/components/POSTicketPrintModal';
 import { createArcaInvoice } from '../../services/arcaApi';
@@ -107,6 +108,8 @@ const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, 
 
 export const BillingView: React.FC = () => {
   const { data: sales = [] } = useSales();
+  const { data: creditNotes = [] } = useCreditNotes();
+  const createCreditNote = useCreateCreditNote();
   const setActiveTab = useWorkspaceStore((state) => state.setActiveTab);
 
   const theme = useTheme();
@@ -149,17 +152,29 @@ export const BillingView: React.FC = () => {
 
   const rowKey = (salesPoint: number, number: number) => `${salesPoint}-${number}`;
 
+  // Comprobantes que YA tienen una Nota de Crédito emitida: no se debe generar otra.
+  const ncAlreadyIssued = React.useMemo(() => {
+    const keys = new Set<string>();
+    creditNotes.forEach((nc) => keys.add(`${nc.associatedVoucher.voucherType}-${nc.associatedVoucher.salesPoint}-${nc.associatedVoucher.voucherNumber}`));
+    sales.forEach((s) => {
+      if (s.fiscalCreditNote && s.fiscalInvoice) keys.add(`${s.fiscalInvoice.voucherType}-${s.fiscalInvoice.salesPoint}-${s.fiscalInvoice.voucherNumber}`);
+    });
+    return keys;
+  }, [creditNotes, sales]);
+
+  const hasNcIssued = (salesPoint: number, voucherType: number, number: number) => ncAlreadyIssued.has(`${voucherType}-${salesPoint}-${number}`);
+
   const analyzeReport = () => {
     const rows = parseArcaReportLines(repairText);
     setParsedRows(rows);
     const counts = new Map<number, number>();
     rows.forEach((r) => counts.set(r.amount, (counts.get(r.amount) || 0) + 1));
     const selected = new Set<string>();
-    const seen = new Map<number, boolean>();
+    const kept = new Map<number, boolean>();
     rows.forEach((r) => {
-      if ((counts.get(r.amount) || 0) > 1) {
-        if (seen.get(r.amount)) selected.add(rowKey(r.salesPoint, r.number));
-        seen.set(r.amount, true);
+      if ((counts.get(r.amount) || 0) > 1 && !hasNcIssued(r.salesPoint, r.voucherType, r.number)) {
+        if (kept.get(r.amount)) selected.add(rowKey(r.salesPoint, r.number));
+        kept.set(r.amount, true);
       }
     });
     setSelectedNums(selected);
@@ -183,6 +198,13 @@ export const BillingView: React.FC = () => {
     for (const row of parsedRows) {
       const key = rowKey(row.salesPoint, row.number);
       if (!selectedNums.has(key)) continue;
+      if (hasNcIssued(row.salesPoint, row.voucherType, row.number)) {
+        log.push({
+          ok: false,
+          message: `Comprobante ${String(row.salesPoint).padStart(4, '0')}-${String(row.number).padStart(8, '0')} ya tiene una Nota de Crédito emitida. Se omitió.`,
+        });
+        continue;
+      }
       try {
         const { fiscalResult } = await createArcaInvoice({
           voucherType: CREDIT_NOTE_TYPES[row.voucherType] ?? 13,
@@ -198,6 +220,17 @@ export const BillingView: React.FC = () => {
         log.push({
           ok: true,
           message: `NC #${fiscalResult.voucherNumber} (CAE ${fiscalResult.cae}) emitida para anular ${String(row.salesPoint).padStart(4, '0')}-${String(row.number).padStart(8, '0')} ($${row.amount.toFixed(2)})`,
+        });
+        createCreditNote.mutate({
+          voucherNumber: fiscalResult.voucherNumber,
+          voucherType: fiscalResult.voucherType,
+          salesPoint: fiscalResult.salesPoint,
+          cae: fiscalResult.cae,
+          caeExpiration: fiscalResult.caeExpiration,
+          amount: row.amount,
+          associatedVoucher: { voucherType: row.voucherType, salesPoint: row.salesPoint, voucherNumber: row.number },
+          source: 'SUBSANACION',
+          createdAt: new Date().toISOString(),
         });
       } catch (err) {
         log.push({
@@ -235,6 +268,15 @@ export const BillingView: React.FC = () => {
   const handleCancelSale = async () => {
     const sale = sales.find((s) => s.id === cancelTargetId);
     if (!sale) return;
+    if (sale.fiscalCreditNote) {
+      addNotification({
+        title: 'Venta ya anulada con Nota de Crédito',
+        message: `La venta ${sale.ticketNumber} ya tiene una NC emitida. No se puede anular nuevamente.`,
+        type: 'warning',
+      });
+      setCancelTargetId(null);
+      return;
+    }
 
     const updates: Partial<Sale> = {
       status: 'CANCELLED',
@@ -379,23 +421,81 @@ export const BillingView: React.FC = () => {
     return !!s && s.status === 'COMPLETED' && !s.fiscalInvoice && !emittingRef.current.has(id) && s.payments?.some((p) => p.method === 'QR' || p.method === 'CARD');
   };
 
-  const comprobantes = sales.map((s) => {
+  interface ComprobanteRow {
+    id: string;
+    ticketNumber: string;
+    receiverName: string;
+    taxId: string;
+    total: number;
+    type: 'ARCA' | 'INTERNO';
+    kind: 'FACTURA' | 'NC';
+    cae: string;
+    voucherNumber: number | null;
+    status: string;
+    rawStatus: string;
+    createdAt: unknown;
+    hasFiles: boolean;
+    ncInfo?: { associated: string };
+  }
+
+  const saleRows: ComprobanteRow[] = sales.map((s) => {
     const notes = typeof s.notes === 'string' ? s.notes : '';
     return {
-    id: s.id,
-    ticketNumber: s.ticketNumber,
-    receiverName: s.customerName || 'Consumidor Final',
-    taxId: '',
-    total: s.grandTotal,
-    type: notes.includes('CAE') ? ('ARCA' as const) : ('INTERNO' as const),
-    cae: notes.includes('CAE') ? notes.match(/CAE: (\S+)/)?.[1] || '' : '',
-    voucherNumber: s.fiscalInvoice?.voucherNumber ?? (Number(notes.match(/Factura ARCA #(\d+)/)?.[1] || 0) || null),
-    status: statusLabel(s),
-    rawStatus: s.status,
-    createdAt: s.createdAt,
-    hasFiles: false,
-  };
+      id: s.id,
+      ticketNumber: s.ticketNumber,
+      receiverName: s.customerName || 'Consumidor Final',
+      taxId: '',
+      total: s.grandTotal,
+      type: notes.includes('CAE') ? ('ARCA' as const) : ('INTERNO' as const),
+      kind: 'FACTURA' as const,
+      cae: notes.includes('CAE') ? notes.match(/CAE: (\S+)/)?.[1] || '' : '',
+      voucherNumber: s.fiscalInvoice?.voucherNumber ?? (Number(notes.match(/Factura ARCA #(\d+)/)?.[1] || 0) || null),
+      status: statusLabel(s),
+      rawStatus: s.status,
+      createdAt: s.createdAt,
+      hasFiles: false,
+    };
   });
+
+  const anulacionNcRows: ComprobanteRow[] = sales
+    .filter((s) => s.fiscalCreditNote)
+    .map((s) => ({
+      id: `${s.id}-nc`,
+      ticketNumber: `NC #${String(s.fiscalCreditNote!.voucherNumber).padStart(8, '0')}`,
+      receiverName: 'Consumidor Final',
+      taxId: '',
+      total: s.grandTotal,
+      type: 'ARCA' as const,
+      kind: 'NC' as const,
+      cae: s.fiscalCreditNote!.cae,
+      voucherNumber: s.fiscalCreditNote!.voucherNumber,
+      status: 'EMITIDA',
+      rawStatus: 'COMPLETED',
+      createdAt: s.fiscalCreditNote!.emittedAt,
+      hasFiles: false,
+      ncInfo: { associated: `Ticket ${s.ticketNumber}` },
+    }));
+
+  const creditNoteRows: ComprobanteRow[] = creditNotes.map((nc) => ({
+    id: `nc-${nc.id}`,
+    ticketNumber: `NC #${String(nc.voucherNumber).padStart(8, '0')}`,
+    receiverName: 'Consumidor Final',
+    taxId: '',
+    total: nc.amount,
+    type: 'ARCA' as const,
+    kind: 'NC' as const,
+    cae: nc.cae,
+    voucherNumber: nc.voucherNumber,
+    status: 'EMITIDA',
+    rawStatus: 'COMPLETED',
+    createdAt: nc.createdAt,
+    hasFiles: false,
+    ncInfo: { associated: `${String(nc.associatedVoucher.salesPoint).padStart(4, '0')}-${String(nc.associatedVoucher.voucherNumber).padStart(8, '0')}` },
+  }));
+
+  const comprobantes = [...saleRows, ...anulacionNcRows, ...creditNoteRows].sort(
+    (a, b) => toDate(b.createdAt).getTime() - toDate(a.createdAt).getTime()
+  );
 
   const filteredComprobantes = comprobantes.filter((c) => {
     const query = search.trim().toLowerCase();
@@ -423,7 +523,15 @@ export const BillingView: React.FC = () => {
     return true;
   });
 
-  const renderActions = (c: (typeof comprobantes)[number], align: 'flex-start' | 'flex-end' = 'flex-end') => (
+  const renderActions = (c: (typeof comprobantes)[number], align: 'flex-start' | 'flex-end' = 'flex-end') => {
+    if (c.kind === 'NC') {
+      return (
+        <Box sx={{ display: 'flex', gap: 1, justifyContent: align, flexWrap: 'wrap' }}>
+          <Chip size="small" variant="outlined" icon={<Receipt size={14} />} label={`Vinculada a ${c.ncInfo?.associated || '—'}`} sx={{ fontWeight: 800, borderRadius: 2.5, color: '#B45309', borderColor: '#FCD34D', bgcolor: '#FFFBEB' }} />
+        </Box>
+      );
+    }
+    return (
     <Box sx={{ display: 'flex', gap: 1, justifyContent: align, flexWrap: 'wrap' }}>
       <Button
         size="small"
@@ -450,7 +558,7 @@ export const BillingView: React.FC = () => {
           {emittingIds.has(c.id) ? 'Emitiendo...' : 'Facturar'}
         </Button>
       )}
-      {c.rawStatus === 'COMPLETED' && (
+      {c.rawStatus === 'COMPLETED' && !sales.find((s) => s.id === c.id)?.fiscalCreditNote && (
         <Button
           size="small"
           variant="outlined"
@@ -468,7 +576,8 @@ export const BillingView: React.FC = () => {
         </Button>
       ) : null}
     </Box>
-  );
+    );
+  };
 
   return (
     <><Box sx={{ p: 3, bgcolor: '#FFFFFF' }}>
@@ -600,7 +709,7 @@ export const BillingView: React.FC = () => {
                 <Paper key={c.id} elevation={1} sx={{ p: 2.5, borderRadius: 4, border: '2px solid', borderColor: '#E2E8F0', bgcolor: '#FFFFFF' }}>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1, mb: 1.5 }}>
                     <Typography variant="subtitle1" sx={{ fontWeight: 900, fontFamily: 'monospace' }}>{c.ticketNumber}</Typography>
-                    <Chip label={c.status} color={statusColor(sale!)} size="small" sx={{ fontWeight: 800 }} />
+                    <Chip label={c.status} color={c.kind === 'NC' ? 'warning' : statusColor(sale!)} size="small" sx={{ fontWeight: 800 }} />
                   </Box>
                   <Field label="Fecha y hora de emisión">
                     <Typography variant="body2" sx={{ fontWeight: 700, color: '#475569' }}>{formatIssuedAt(c.createdAt)}</Typography>
@@ -609,7 +718,9 @@ export const BillingView: React.FC = () => {
                     <Typography variant="body2" sx={{ fontWeight: 800 }}>{c.receiverName}</Typography>
                   </Field>
                   <Field label="Tipo">
-                    {c.type === 'ARCA' ? (
+                    {c.kind === 'NC' ? (
+                      <Chip label="Nota de Crédito" color="warning" size="small" sx={{ fontWeight: 800, borderRadius: 2, bgcolor: '#FEF3C7', color: '#92400E' }} />
+                    ) : c.type === 'ARCA' ? (
                       <Chip label="ARCA" color="primary" size="small" sx={{ fontWeight: 800, borderRadius: 2 }} />
                     ) : (
                       <Chip label="Interno" variant="outlined" color="default" size="small" sx={{ fontWeight: 800, borderRadius: 2, borderColor: '#94A3B8', color: '#475569' }} />
@@ -682,7 +793,9 @@ export const BillingView: React.FC = () => {
                       <Typography variant="body1" sx={{ fontWeight: 800 }}>{c.receiverName}</Typography>
                     </TableCell>
                     <TableCell>
-                      {c.type === 'ARCA' ? (
+                      {c.kind === 'NC' ? (
+                        <Chip label="Nota de Crédito" color="warning" size="small" sx={{ fontWeight: 800, borderRadius: 2, bgcolor: '#FEF3C7', color: '#92400E' }} />
+                      ) : c.type === 'ARCA' ? (
                         <Chip label="ARCA" color="primary" size="small" sx={{ fontWeight: 800, borderRadius: 2 }} />
                       ) : (
                         <Chip label="Interno" variant="outlined" color="default" size="small" sx={{ fontWeight: 800, borderRadius: 2, borderColor: '#94A3B8', color: '#475569' }} />
@@ -693,6 +806,9 @@ export const BillingView: React.FC = () => {
                         {(sales.find((s) => s.id === c.id)?.payments || []).map((p, i) => (
                           <Chip key={i} label={paymentMethodLabel(p)} size="small" variant="outlined" sx={{ fontWeight: 800 }} />
                         ))}
+                        {c.kind === 'NC' && c.ncInfo && (
+                          <Chip size="small" variant="outlined" label={`Vinculada a ${c.ncInfo.associated}`} sx={{ fontWeight: 800, color: '#B45309', borderColor: '#FCD34D', bgcolor: '#FFFBEB' }} />
+                        )}
                       </Box>
                     </TableCell>
                     <TableCell>
@@ -700,9 +816,9 @@ export const BillingView: React.FC = () => {
                         {c.voucherNumber ? String(c.voucherNumber).padStart(8, '0') : '—'}
                       </Typography>
                     </TableCell>
-                    <TableCell sx={{ fontWeight: 900, color: '#2563EB', fontSize: '1.15rem' }}>${c.total.toFixed(2)}</TableCell>
+                    <TableCell sx={{ fontWeight: 900, color: c.kind === 'NC' ? '#B45309' : '#2563EB', fontSize: '1.15rem' }}>${c.total.toFixed(2)}</TableCell>
                     <TableCell>
-                      <Chip label={c.status} color={statusColor(sales.find(s => s.id === c.id)!)}
+                      <Chip label={c.status} color={c.kind === 'NC' ? 'warning' : statusColor(sales.find(s => s.id === c.id)!)}
                         size="medium" sx={{ fontWeight: 800 }} />
                     </TableCell>
                     <TableCell>
@@ -817,8 +933,9 @@ export const BillingView: React.FC = () => {
                       const dupCount = parsedRows.filter((r) => r.amount === row.amount).length;
                       const isDup = dupCount > 1;
                       const key = rowKey(row.salesPoint, row.number);
+                      const alreadyNc = hasNcIssued(row.salesPoint, row.voucherType, row.number);
                       return (
-                        <TableRow key={key} hover sx={{ bgcolor: isDup ? '#FFFBEB' : 'inherit' }}>
+                        <TableRow key={key} hover sx={{ bgcolor: alreadyNc ? '#F0FDF4' : isDup ? '#FFFBEB' : 'inherit', opacity: alreadyNc ? 0.85 : 1 }}>
                           <TableCell sx={{ fontFamily: 'monospace', fontWeight: 800 }}>
                             {String(row.salesPoint).padStart(4, '0')}-{String(row.number).padStart(8, '0')}
                           </TableCell>
@@ -827,7 +944,9 @@ export const BillingView: React.FC = () => {
                           </TableCell>
                           <TableCell sx={{ fontWeight: 900, color: '#2563EB' }}>${row.amount.toFixed(2)}</TableCell>
                           <TableCell>
-                            {isDup ? (
+                            {alreadyNc ? (
+                              <Chip size="small" icon={<CheckCircle2 size={14} />} label="NC ya emitida" color="success" sx={{ fontWeight: 800, borderRadius: 2 }} />
+                            ) : isDup ? (
                               <Chip size="small" icon={<AlertTriangle size={14} />} label={`${dupCount} con mismo monto`} color="warning" sx={{ fontWeight: 800, borderRadius: 2 }} />
                             ) : (
                               <Typography variant="body2" sx={{ color: '#94A3B8', fontWeight: 700 }}>No</Typography>
@@ -835,8 +954,8 @@ export const BillingView: React.FC = () => {
                           </TableCell>
                           <TableCell>
                             <FormControlLabel
-                              control={<Checkbox checked={selectedNums.has(key)} disabled={repairBusy} onChange={() => toggleRepairRow(key)} />}
-                              label={<Typography variant="body2" sx={{ fontWeight: 700 }}>NC</Typography>}
+                              control={<Checkbox checked={selectedNums.has(key)} disabled={repairBusy || alreadyNc} onChange={() => toggleRepairRow(key)} />}
+                              label={<Typography variant="body2" sx={{ fontWeight: 700 }}>{alreadyNc ? '—' : 'NC'}</Typography>}
                             />
                           </TableCell>
                         </TableRow>
