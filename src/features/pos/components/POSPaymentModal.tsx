@@ -1,4 +1,5 @@
 import React from 'react';
+import { keyframes } from '@emotion/react';
 import {
   Dialog,
   DialogTitle,
@@ -40,11 +41,50 @@ import { MercadoPagoLogo } from '../../../components/common/MercadoPagoLogo';
 import { CuentaDniLogo } from '../../../components/common/CuentaDniLogo';
 import { calculateCartTotals } from '../utils/calculateCartTotals';
 import { createMercadoPagoQr, cancelMercadoPagoQr, getMercadoPagoQrStatus, getMercadoPagoStaticQr, listMercadoPagoPointDevices, createMercadoPagoPointOrder, getMercadoPagoPointOrderStatus, cancelMercadoPagoPointOrder } from '../../../services/mercadoPagoQrApi';
+import { paymentMethodLabel } from '../utils/paymentLabels';
 
 const computeSurcharge = (amount: number, ratePercent: number) => {
   const rate = ratePercent / 100;
   return Math.round(amount * (rate / (1 + rate)) * 100) / 100;
 };
+
+const accreditedPop = keyframes`
+  0% { opacity: 0; transform: scale(0.6); }
+  60% { transform: scale(1.06); }
+  100% { opacity: 1; transform: scale(1); }
+`;
+
+const submitPulse = keyframes`
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.04); }
+`;
+
+function playPaymentSuccessSound() {
+  if (typeof AudioContext === 'undefined') return;
+  try {
+    const audio = new AudioContext();
+    const master = audio.createGain();
+    master.gain.value = 0.12;
+    master.connect(audio.destination);
+    const notes = [880, 1174.66, 1567.98];
+    notes.forEach((freq, i) => {
+      const osc = audio.createOscillator();
+      const gain = audio.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      const start = audio.currentTime + i * 0.11;
+      const end = start + 0.22;
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(1, start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, end);
+      osc.connect(gain);
+      gain.connect(master);
+      osc.start(start);
+      osc.stop(end + 0.02);
+    });
+    window.setTimeout(() => void audio.close(), 700);
+  } catch {}
+}
 
 interface POSPaymentModalProps {
   onPrintTicket: (sale: Sale) => void;
@@ -64,6 +104,13 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
   const [cardType, setCardType] = React.useState<'DEBIT' | 'CREDIT'>('DEBIT');
   const [cdniPercent, setCdniPercent] = React.useState(5);
   const amountRef = React.useRef<HTMLInputElement>(null);
+
+  // Anti doble clic: bloquea confirmación/agregado mientras se procesa el cierre.
+  const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const submittingRef = React.useRef(false);
+  // Banner "PAGO ACREDITADO CON ÉXITO" + sonido al acreditarse un pago.
+  const [accredited, setAccredited] = React.useState<{ label: string; amount: number } | null>(null);
+  const accreditedTimerRef = React.useRef<number | null>(null);
 
   // "Otro monto": permite cobrar un monto final distinto al calculado (QR / Tarjeta).
   const [customAmount, setCustomAmount] = React.useState('');
@@ -98,6 +145,13 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
 
   const cdniProvider = React.useMemo(() => new CuentaDniPaymentProvider(), []);
 
+  const notifyAccredited = (label: string, amount: number) => {
+    setAccredited({ label, amount });
+    playPaymentSuccessSound();
+    if (accreditedTimerRef.current) window.clearTimeout(accreditedTimerRef.current);
+    accreditedTimerRef.current = window.setTimeout(() => setAccredited(null), 5000);
+  };
+
   const { grandTotal } = calculateCartTotals(cart, discountGlobal);
   const totalPaid = payments.reduce((acc, p) => acc + p.amount, 0);
   const surchargeAmount = payments.reduce((acc, p) => acc + (p.surchargeAmount || 0), 0);
@@ -118,6 +172,13 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
   const saleTotal = totalPaid - totalChange;
 
   React.useEffect(() => {
+    if (accreditedTimerRef.current) {
+      window.clearTimeout(accreditedTimerRef.current);
+      accreditedTimerRef.current = null;
+    }
+    setAccredited(null);
+    submittingRef.current = false;
+    setIsSubmitting(false);
     if (isPaymentModalOpen) {
       setPayAmount('');
       setSelectedMethod('CASH');
@@ -203,6 +264,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
           setMpTxId(payment.paymentId);
           setMpStatus('APPROVED');
           addPayment({ method: 'QR', amount: mpAmount, reference: payment.paymentId, change: 0, surchargeAmount: mpCustomRef.current ? 0 : computeSurcharge(mpAmount, 5) });
+          notifyAccredited('Mercado Pago', mpAmount);
           addNotification({ title: 'Mercado Pago aprobado', message: `Transacción confirmada: ${payment.paymentId}`, type: 'success' });
         } else if (payment.status === 'rejected' || payment.status === 'cancelled') {
           setMpError(payment.detail || 'El pago fue rechazado o cancelado.');
@@ -233,6 +295,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
         setMpTxId(payment.paymentId);
         setMpStatus('APPROVED');
         addPayment({ method: 'QR', amount: mpAmount, reference: payment.paymentId, change: 0, surchargeAmount: mpCustomRef.current ? 0 : computeSurcharge(mpAmount, 5) });
+        notifyAccredited('Mercado Pago', mpAmount);
         addNotification({ title: 'Mercado Pago aprobado', message: `Transacción confirmada: ${payment.paymentId}`, type: 'success' });
       } else if (payment.status === 'rejected' || payment.status === 'cancelled') {
         setMpError(payment.detail || 'El pago fue rechazado o cancelado.');
@@ -255,6 +318,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
     setMpTxId('MANUAL');
     setMpStatus('APPROVED');
     addPayment({ method: 'QR', amount: mpAmount, reference: `MANUAL-${Date.now()}`, change: 0, surchargeAmount: mpCustomRef.current ? 0 : computeSurcharge(mpAmount, 5) });
+    notifyAccredited('Mercado Pago', mpAmount);
     addNotification({ title: 'Pago validado manualmente', message: `Se asoció el pago manual de $${mpAmount.toFixed(2)} al ticket.`, type: 'success' });
     setManualValidateOpen(false);
     void cancelMercadoPagoQr().catch(() => undefined);
@@ -333,6 +397,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
             setPointStatus('APPROVED');
             const reference = order.payment?.id ? `POINT-${order.payment.id}` : `POINT-${pointOrderId}`;
             addPayment({ method: 'CARD', amount: pointAmountRef.current, reference, change: 0, surchargeAmount: pointCustomRef.current ? 0 : pendingSurcharge });
+            notifyAccredited('Tarjeta Point', pointAmountRef.current);
             addNotification({ title: 'Cobro con Point aprobado', message: `Transacción confirmada: ${reference}`, type: 'success' });
           }
         } else if (['failed', 'canceled', 'expired', 'refunded'].includes(order.status)) {
@@ -428,6 +493,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
       change: 0,
       surchargeAmount: useCustomAmount ? 0 : computeSurcharge(amt, cdniPercent),
     });
+    notifyAccredited('Cuenta DNI', amt);
 
     addNotification({
       title: 'Cuenta DNI Confirmado Manualmente',
@@ -437,6 +503,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
   };
 
   const handleAddPayment = () => {
+    if (submittingRef.current) return;
     const amt = parseFloat(payAmount);
     if (isNaN(amt) || amt <= 0) return;
 
@@ -452,10 +519,14 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
       change: selectedMethod === 'CASH' && amt > checkoutTotal - totalPaid ? amt - (checkoutTotal - totalPaid) : 0,
       surchargeAmount: paymentSurcharge,
     });
+    notifyAccredited(paymentMethodLabel({ method: selectedMethod === 'MERCADOPAGO' || selectedMethod === 'CUENTA_DNI' ? 'QR' : selectedMethod }), amt);
     setPayAmount('');
   };
 
   const handleConfirmCheckout = async () => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    setIsSubmitting(true);
     try {
       const ticketNumber = await getNextTicketNumber();
       const primaryMethod = selectedMethod === 'MERCADOPAGO' ? 'MERCADOPAGO_QR' : selectedMethod === 'CUENTA_DNI' ? 'CUENTA_DNI' : selectedMethod;
@@ -535,6 +606,9 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
         message: 'Ocurrió un error al procesar la venta. Intente nuevamente.',
         type: 'error',
       });
+    } finally {
+      submittingRef.current = false;
+      setIsSubmitting(false);
     }
   };
 
@@ -561,6 +635,34 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
         <Alert severity="info" icon={<ShieldCheck size={20} />} sx={{ mb: 3, borderRadius: 3, fontSize: '1rem', fontWeight: 700 }}>
           Política Fiscal Centralizada: Comprobante ARCA únicamente emitido si el pago de Mercado Pago, Cuenta DNI o tarjeta está APROBADO.
         </Alert>
+
+        {accredited && (
+          <Box
+            sx={{
+              mb: 3,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 2,
+              p: 2,
+              borderRadius: 3,
+              bgcolor: '#DCFCE7',
+              border: '3px solid #22C55E',
+              boxShadow: '0 0 0 4px rgba(34,197,94,0.25)',
+              animation: `${accreditedPop} 0.35s ease-out`,
+            }}
+          >
+            <CheckCheck size={30} color="#16A34A" />
+            <Box sx={{ textAlign: 'left' }}>
+              <Typography variant="h6" sx={{ fontWeight: 900, color: '#15803D', letterSpacing: '0.03em', lineHeight: 1.15 }}>
+                PAGO ACREDITADO CON ÉXITO
+              </Typography>
+              <Typography variant="body2" sx={{ fontWeight: 800, color: '#166534' }}>
+                {accredited.label} · ${accredited.amount.toFixed(2)}
+              </Typography>
+            </Box>
+          </Box>
+        )}
 
         <Grid container spacing={3}>
           <Grid size={{ xs: 12, md: 7 }}>
@@ -1040,9 +1142,10 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
                   label="Monto a abonar"
                   type="number"
                   value={payAmount}
+                  disabled={isSubmitting}
                   onChange={(e) => setPayAmount(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
+                    if (e.key === 'Enter' && !isSubmitting) {
                       e.preventDefault();
                       if (totalPaid >= checkoutTotal) {
                         handleConfirmCheckout();
@@ -1062,7 +1165,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
                 <Button
                   variant="contained"
                   onClick={handleAddPayment}
-                  disabled={enteredAmount <= 0}
+                  disabled={enteredAmount <= 0 || isSubmitting}
                   sx={{ height: 52, px: 3, borderRadius: 3, fontWeight: 900, fontSize: '1rem', minWidth: 120, bgcolor: '#2563EB', color: '#FFFFFF' }}
                 >
                   Agregar
@@ -1133,18 +1236,38 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
       </DialogContent>
 
       <DialogActions sx={{ p: 2.5, justifyContent: 'space-between' }}>
-        <Button onClick={handleClosePaymentModal} variant="outlined" sx={{ borderRadius: 3, minHeight: 48, px: 3, fontWeight: 800, color: '#475569', borderColor: '#CBD5E1' }}>
+        <Button onClick={handleClosePaymentModal} variant="outlined" disabled={isSubmitting} sx={{ borderRadius: 3, minHeight: 48, px: 3, fontWeight: 800, color: '#475569', borderColor: '#CBD5E1' }}>
           Cancelar
         </Button>
         <Button
           variant="contained"
           color="success"
-          disabled={isCheckoutDisabled}
+          disabled={isCheckoutDisabled || isSubmitting}
           onClick={handleConfirmCheckout}
-          startIcon={selectedMethod === 'MERCADOPAGO' && mpStatus === 'WAITING' ? <Clock size={22} /> : <Printer size={22} />}
-          sx={{ py: 1.75, px: 4, borderRadius: 3.5, fontSize: '1.15rem', fontWeight: 900, minHeight: 52, bgcolor: '#16A34A', '&:hover': { bgcolor: '#15803D' } }}
+          startIcon={
+            isSubmitting ? (
+              <CircularProgress size={20} color="inherit" />
+            ) : selectedMethod === 'MERCADOPAGO' && mpStatus === 'WAITING' ? (
+              <Clock size={22} />
+            ) : (
+              <Printer size={22} />
+            )
+          }
+          sx={{
+            py: 1.75,
+            px: 4,
+            borderRadius: 3.5,
+            fontSize: '1.15rem',
+            fontWeight: 900,
+            minHeight: 52,
+            bgcolor: '#16A34A',
+            '&:hover': { bgcolor: '#15803D' },
+            animation: isSubmitting ? `${submitPulse} 1.1s ease-in-out infinite` : undefined,
+          }}
         >
-          {selectedMethod === 'MERCADOPAGO' && mpStatus === 'WAITING'
+          {isSubmitting
+            ? 'PROCESANDO...'
+            : selectedMethod === 'MERCADOPAGO' && mpStatus === 'WAITING'
             ? 'AGUARDANDO PAGO MERCADO PAGO...'
             : 'FINALIZAR Y EMITIR COMPROBANTE'}
         </Button>
