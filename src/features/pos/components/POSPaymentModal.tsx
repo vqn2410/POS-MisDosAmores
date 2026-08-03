@@ -108,6 +108,8 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
   // Anti doble clic: bloquea confirmación/agregado mientras se procesa el cierre.
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const submittingRef = React.useRef(false);
+  const [completedSale, setCompletedSale] = React.useState<Sale | null>(null);
+  const finalizeAccreditedPaymentRef = React.useRef<(method: ExtendedPaymentMethod) => void>(() => undefined);
   // Banner "PAGO ACREDITADO CON ÉXITO" + sonido al acreditarse un pago.
   const [accredited, setAccredited] = React.useState<{ label: string; amount: number } | null>(null);
   const accreditedTimerRef = React.useRef<number | null>(null);
@@ -169,7 +171,6 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
   const customAmountValue = Number(customAmount.replace(',', '.')) || 0;
   const useCustomAmount = customAmountActive && customAmountValue > 0;
   const chargeAmount = useCustomAmount ? customAmountValue : amountForMethod;
-  const saleTotal = totalPaid - totalChange;
 
   React.useEffect(() => {
     if (accreditedTimerRef.current) {
@@ -264,6 +265,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
           setMpTxId(payment.paymentId);
           setMpStatus('APPROVED');
           addPayment({ method: 'QR', amount: mpAmount, reference: payment.paymentId, change: 0, surchargeAmount: mpCustomRef.current ? 0 : computeSurcharge(mpAmount, 5) });
+          finalizeAccreditedPaymentRef.current('MERCADOPAGO');
           notifyAccredited('Mercado Pago', mpAmount);
           addNotification({ title: 'Mercado Pago aprobado', message: `Transacción confirmada: ${payment.paymentId}`, type: 'success' });
         } else if (payment.status === 'rejected' || payment.status === 'cancelled') {
@@ -295,6 +297,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
         setMpTxId(payment.paymentId);
         setMpStatus('APPROVED');
         addPayment({ method: 'QR', amount: mpAmount, reference: payment.paymentId, change: 0, surchargeAmount: mpCustomRef.current ? 0 : computeSurcharge(mpAmount, 5) });
+        finalizeAccreditedPaymentRef.current('MERCADOPAGO');
         notifyAccredited('Mercado Pago', mpAmount);
         addNotification({ title: 'Mercado Pago aprobado', message: `Transacción confirmada: ${payment.paymentId}`, type: 'success' });
       } else if (payment.status === 'rejected' || payment.status === 'cancelled') {
@@ -318,6 +321,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
     setMpTxId('MANUAL');
     setMpStatus('APPROVED');
     addPayment({ method: 'QR', amount: mpAmount, reference: `MANUAL-${Date.now()}`, change: 0, surchargeAmount: mpCustomRef.current ? 0 : computeSurcharge(mpAmount, 5) });
+    finalizeAccreditedPaymentRef.current('MERCADOPAGO');
     notifyAccredited('Mercado Pago', mpAmount);
     addNotification({ title: 'Pago validado manualmente', message: `Se asoció el pago manual de $${mpAmount.toFixed(2)} al ticket.`, type: 'success' });
     setManualValidateOpen(false);
@@ -397,6 +401,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
             setPointStatus('APPROVED');
             const reference = order.payment?.id ? `POINT-${order.payment.id}` : `POINT-${pointOrderId}`;
             addPayment({ method: 'CARD', amount: pointAmountRef.current, reference, change: 0, surchargeAmount: pointCustomRef.current ? 0 : pendingSurcharge });
+            finalizeAccreditedPaymentRef.current('CARD');
             notifyAccredited('Tarjeta Point', pointAmountRef.current);
             addNotification({ title: 'Cobro con Point aprobado', message: `Transacción confirmada: ${reference}`, type: 'success' });
           }
@@ -523,13 +528,20 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
     setPayAmount('');
   };
 
-  const handleConfirmCheckout = async () => {
+  const handleConfirmCheckout = async (method: ExtendedPaymentMethod = selectedMethod) => {
     if (submittingRef.current) return;
+    const currentState = usePOSStore.getState();
+    const currentTotals = calculateCartTotals(currentState.cart, currentState.discountGlobal);
+    const currentTotalPaid = currentState.payments.reduce((acc, payment) => acc + payment.amount, 0);
+    const currentChange = currentState.payments.reduce((acc, payment) => acc + (payment.change || 0), 0);
+    const currentSaleTotal = currentTotalPaid - currentChange;
+    const currentSurcharge = currentSaleTotal - currentTotals.grandTotal;
+    if (currentSaleTotal + 0.01 < currentTotals.grandTotal) return;
     submittingRef.current = true;
     setIsSubmitting(true);
     try {
       const ticketNumber = await getNextTicketNumber();
-      const primaryMethod = selectedMethod === 'MERCADOPAGO' ? 'MERCADOPAGO_QR' : selectedMethod === 'CUENTA_DNI' ? 'CUENTA_DNI' : selectedMethod;
+      const primaryMethod = method === 'MERCADOPAGO' ? 'MERCADOPAGO_QR' : method === 'CUENTA_DNI' ? 'CUENTA_DNI' : method;
 
       let fiscalEvaluation = null;
       let arcaError = null;
@@ -540,16 +552,16 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
             docType: customer.taxId ? 80 : 99,
             docNumber: customer.taxId || '00000000',
             condicionIvaId: 5,
-            subtotal: saleTotal,
+            subtotal: currentSaleTotal,
             taxTotal: 0,
-            grandTotal: saleTotal,
+            grandTotal: currentSaleTotal,
           });
         } catch (err) {
           arcaError = err instanceof Error ? err.message : 'ARCA no pudo emitir la factura.';
         }
       }
 
-      const sale = completeSale(ticketNumber, saleTotal - grandTotal);
+      const sale = completeSale(ticketNumber, currentSurcharge);
       if (!sale) return;
 
       if (fiscalEvaluation?.fiscalResult) {
@@ -598,7 +610,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
         type: arcaError ? 'warning' : 'success',
       });
 
-      onPrintTicket(sale);
+      setCompletedSale(sale);
     } catch (err) {
       console.error('Error al finalizar venta:', err);
       addNotification({
@@ -610,6 +622,10 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
       submittingRef.current = false;
       setIsSubmitting(false);
     }
+  };
+
+  finalizeAccreditedPaymentRef.current = (method: ExtendedPaymentMethod) => {
+    window.setTimeout(() => void handleConfirmCheckout(method), 0);
   };
 
   const chargeSettled =
@@ -1243,14 +1259,14 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
           variant="contained"
           color="success"
           disabled={isCheckoutDisabled || isSubmitting}
-          onClick={handleConfirmCheckout}
+          onClick={() => void handleConfirmCheckout()}
           startIcon={
             isSubmitting ? (
               <CircularProgress size={20} color="inherit" />
             ) : selectedMethod === 'MERCADOPAGO' && mpStatus === 'WAITING' ? (
               <Clock size={22} />
             ) : (
-              <Printer size={22} />
+              <CheckCheck size={22} />
             )
           }
           sx={{
@@ -1269,7 +1285,32 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
             ? 'PROCESANDO...'
             : selectedMethod === 'MERCADOPAGO' && mpStatus === 'WAITING'
             ? 'AGUARDANDO PAGO MERCADO PAGO...'
-            : 'FINALIZAR Y EMITIR COMPROBANTE'}
+            : 'FINALIZAR VENTA'}
+        </Button>
+      </DialogActions>
+    </Dialog>
+
+    <Dialog open={Boolean(completedSale)} maxWidth="xs" fullWidth>
+      <DialogTitle sx={{ fontWeight: 900, textAlign: 'center', color: '#15803D' }}>Venta finalizada</DialogTitle>
+      <DialogContent>
+        <Typography sx={{ textAlign: 'center', fontWeight: 700, color: '#334155' }}>
+          El pago fue acreditado y la venta se registró correctamente.
+        </Typography>
+      </DialogContent>
+      <DialogActions sx={{ p: 2.5, justifyContent: 'center', gap: 1 }}>
+        <Button variant="outlined" onClick={() => setCompletedSale(null)} sx={{ fontWeight: 800 }}>Cerrar</Button>
+        <Button
+          variant="contained"
+          startIcon={<Printer size={18} />}
+          onClick={() => {
+            if (!completedSale) return;
+            const sale = completedSale;
+            setCompletedSale(null);
+            onPrintTicket(sale);
+          }}
+          sx={{ fontWeight: 900 }}
+        >
+          Imprimir ticket
         </Button>
       </DialogActions>
     </Dialog>
