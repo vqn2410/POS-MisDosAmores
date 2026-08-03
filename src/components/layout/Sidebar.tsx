@@ -32,6 +32,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   ShieldAlert,
+  Landmark,
 } from 'lucide-react';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 import { useCashierModeStore } from '../../store/useCashierModeStore';
@@ -46,6 +47,7 @@ export const ALL_SIDEBAR_ITEMS = [
   { id: 'purchases', title: 'Compras', icon: ShoppingBag, route: '/purchases', adminOnly: true },
   { id: 'suppliers', title: 'Proveedores', icon: Truck, route: '/suppliers', adminOnly: true },
   { id: 'billing', title: 'Facturación / Ventas', icon: FileText, route: '/billing', adminOnly: false },
+  { id: 'arca', title: 'AFIP Comprobantes', icon: Landmark, route: '/arca', adminOnly: false },
   { id: 'cash', title: 'Caja & Arqueo', icon: Wallet, route: '/cash', adminOnly: false },
   { id: 'reports', title: 'Reportes Avanzados', icon: BarChart3, route: '/reports', adminOnly: true },
   { id: 'users', title: 'Usuarios & Roles', icon: UserCheck, route: '/users', adminOnly: true },

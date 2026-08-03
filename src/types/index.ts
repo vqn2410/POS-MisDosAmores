@@ -158,6 +158,16 @@ export interface CreditNote {
   createdAt: string;
 }
 
+export interface ArcaReportVoucher {
+  id: string;
+  voucherType: number;
+  salesPoint: number;
+  voucherNumber: number;
+  date: string;
+  amount: number;
+  importedAt: string;
+}
+
 export interface CashMovement {
   id: string;
   cashSessionId: string;

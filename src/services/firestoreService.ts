@@ -102,4 +102,12 @@ export async function updateMany<T>(collectionName: string, updates: Array<{ id:
   await batch.commit();
 }
 
+export async function upsertMany<T>(collectionName: string, entries: Array<{ id: string; data: Omit<T, 'id'> }>): Promise<void> {
+  const batch = writeBatch(db);
+  entries.forEach(({ id, data }) => {
+    batch.set(doc(db, collectionName, id), stripUndefined({ ...data, updatedAt: serverTimestamp() }), { merge: true });
+  });
+  await batch.commit();
+}
+
 export { serverTimestamp };

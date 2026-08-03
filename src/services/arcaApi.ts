@@ -47,3 +47,24 @@ export const getArcaLastVoucher = (salesPoint: number, voucherType: number) =>
   request<{ salesPoint: number; voucherType: number; lastVoucher: number }>(
     `/last-voucher?voucherType=${voucherType}&salesPoint=${salesPoint}`
   );
+
+export interface ArcaComprobante {
+  voucherType: number;
+  salesPoint: number;
+  voucherNumber: number;
+  date: string;
+  amount: number;
+  result: string;
+  cae: string;
+}
+
+export interface ArcaInvoiceDetails extends ArcaComprobante {
+  caeExpiration: string;
+  docType: number;
+  docNumber: string;
+  grandTotal: number;
+  status: string;
+}
+
+export const getArcaInvoice = (voucherType: number, voucherNumber: number, salesPoint: number) =>
+  request<ArcaInvoiceDetails>(`/consult?voucherType=${voucherType}&voucherNumber=${voucherNumber}&salesPoint=${salesPoint}`);

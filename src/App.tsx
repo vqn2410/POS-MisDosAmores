@@ -40,6 +40,7 @@ const CustomersView = React.lazy(async () => ({ default: (await import('./featur
 const SuppliersView = React.lazy(async () => ({ default: (await import('./features/suppliers/SuppliersView')).SuppliersView }));
 const PurchasesView = React.lazy(async () => ({ default: (await import('./features/purchases/PurchasesView')).PurchasesView }));
 const BillingView = React.lazy(async () => ({ default: (await import('./features/billing/BillingView')).BillingView }));
+const ArcaView = React.lazy(async () => ({ default: (await import('./features/arca/ArcaView')).ArcaView }));
 const CashView = React.lazy(async () => ({ default: (await import('./features/cash/CashView')).CashView }));
 const ReportsView = React.lazy(async () => ({ default: (await import('./features/reports/ReportsView')).ReportsView }));
 const UsersView = React.lazy(async () => ({ default: (await import('./features/users/UsersView')).UsersView }));
@@ -331,6 +332,8 @@ const AppContent: React.FC = () => {
         return <PurchasesView />;
       case 'billing':
         return <BillingView />;
+      case 'arca':
+        return <ArcaView />;
       case 'cash':
         return <CashView />;
       case 'reports':
