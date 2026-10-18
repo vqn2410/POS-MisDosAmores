@@ -4,10 +4,6 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
   TextField,
   InputAdornment,
   Button,
@@ -19,7 +15,6 @@ import {
 import { User as UserIcon, Lock, ShieldCheck } from 'lucide-react';
 import { loginWithUsername } from '../services/firebaseAuthService';
 import { useAuthStore } from '../../../store/useAuthStore';
-import { useUsers } from '../../../hooks/useUsers';
 
 interface LoginModalProps {
   open: boolean;
@@ -33,14 +28,12 @@ export const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
 
   const { setUser } = useAuthStore();
-  const { data: users = [] } = useUsers();
-  const activeUsers = users.filter((user) => user.isActive !== false);
   const passwordRef = React.useRef<HTMLInputElement>(null);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!username.trim() || !password) {
-      setErrorMessage('Seleccioná un usuario e ingresá su clave de acceso.');
+      setErrorMessage('Ingresá tu usuario y clave de acceso.');
       return;
     }
 
@@ -81,7 +74,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
           Ingreso al POS
         </Typography>
         <Typography variant="caption" color="text.secondary">
-          Seleccioná tu usuario para comenzar
+          Ingresá tu usuario para comenzar
         </Typography>
       </DialogTitle>
 
@@ -93,52 +86,45 @@ export const LoginModal: React.FC<LoginModalProps> = ({ open, onClose }) => {
         )}
 
         <Box component="form" onSubmit={handleLogin} sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
-          <FormControl fullWidth autoFocus>
-            <InputLabel id="pos-user-label">Usuario</InputLabel>
-            <Select
-              labelId="pos-user-label"
-              label="Usuario"
-              value={username}
-              onChange={(event) => {
-                setUsername(event.target.value);
-                setPassword('');
-                setErrorMessage(null);
-                setTimeout(() => passwordRef.current?.focus(), 50);
-              }}
-              disabled={loading}
-              startAdornment={<UserIcon size={18} style={{ marginLeft: 12, marginRight: 8 }} />}
-              sx={{ borderRadius: 2.5 }}
-            >
-              {activeUsers.map((user) => (
-                <MenuItem key={user.id} value={user.username}>
-                  {user.fullName || user.username} ({user.username})
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+          <TextField
+            autoFocus
+            fullWidth
+            label="Usuario"
+            value={username}
+            onChange={(event) => {
+              setUsername(event.target.value);
+              setErrorMessage(null);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                passwordRef.current?.focus();
+              }
+            }}
+            disabled={loading}
+            slotProps={{
+              input: {
+                startAdornment: <InputAdornment position="start"><UserIcon size={18} /></InputAdornment>,
+                sx: { borderRadius: 2.5 },
+              },
+            }}
+          />
 
-          {activeUsers.length === 0 && (
-            <Alert severity="warning">No hay usuarios activos disponibles.</Alert>
-          )}
-
-          {username && (
-            <TextField
-              inputRef={passwordRef}
-              autoFocus
-              fullWidth
-              label="Clave de acceso"
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              disabled={loading}
-              slotProps={{
-                input: {
-                  startAdornment: <InputAdornment position="start"><Lock size={18} /></InputAdornment>,
-                  sx: { borderRadius: 2.5 },
-                },
-              }}
-            />
-          )}
+          <TextField
+            inputRef={passwordRef}
+            fullWidth
+            label="Clave de acceso"
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            disabled={loading}
+            slotProps={{
+              input: {
+                startAdornment: <InputAdornment position="start"><Lock size={18} /></InputAdornment>,
+                sx: { borderRadius: 2.5 },
+              },
+            }}
+          />
 
           <Button
             type="submit"

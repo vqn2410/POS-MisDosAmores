@@ -6,12 +6,9 @@ import {
 } from 'firebase/auth';
 import type { User as FirebaseUser } from 'firebase/auth';
 import {
-  collection,
-  query,
-  where,
-  getDocs,
   doc,
   doc as firestoreDoc,
+  getDoc,
   setDoc,
   updateDoc,
   serverTimestamp,
@@ -22,22 +19,6 @@ import { stripUndefined } from '../../../services/firestoreService';
 
 export function emailFromUsername(username: string): string {
   return `${username.trim()}@pos.local`;
-}
-
-/**
- * Searches for a user in the "users" Firestore collection using their username.
- */
-async function getUserDocByUsername(username: string): Promise<User | null> {
-  const usersRef = collection(db, 'users');
-  const q = query(usersRef, where('username', '==', username.trim()));
-  const querySnapshot = await getDocs(q);
-
-  if (querySnapshot.empty) {
-    return null;
-  }
-
-  const docSnap = querySnapshot.docs[0];
-  return { id: docSnap.id, ...docSnap.data() } as User;
 }
 
 /**
@@ -69,23 +50,34 @@ export async function createFirebaseUser(
 }
 
 /**
- * Authenticates an existing active POS user after it is selected from the terminal list.
+ * Authenticates a POS user by username + password without reading the "users"
+ * collection before login (that collection is protected and only readable by
+ * authenticated users). The internal email is derived from the username.
  */
 export async function loginWithUsername(username: string, password: string): Promise<User> {
-  const userDoc = await getUserDocByUsername(username);
+  const trimmed = username.trim();
+  const email = emailFromUsername(trimmed);
 
-  if (!userDoc) {
-    throw new Error('Usuario no encontrado.');
+  const credential = await signInWithEmailAndPassword(auth, email, password);
+  const uid = credential.user.uid;
+
+  let userDoc: User | null = null;
+  try {
+    const snap = await getDoc(doc(db, 'users', uid));
+    if (snap.exists()) {
+      userDoc = { id: snap.id, ...snap.data() } as User;
+    }
+  } catch (err) {
+    console.warn('No se pudo leer el perfil del usuario:', err);
   }
-  if (userDoc.isActive === false) {
+
+  if (userDoc && userDoc.isActive === false) {
+    await firebaseSignOut(auth);
     throw new Error('El usuario se encuentra inactivo. Acceso denegado.');
   }
 
-  const email = userDoc.email || emailFromUsername(username);
-  const credential = await signInWithEmailAndPassword(auth, email, password);
-
   try {
-    await updateDoc(doc(db, 'users', userDoc.id), {
+    await updateDoc(doc(db, 'users', uid), {
       lastLogin: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
@@ -93,7 +85,18 @@ export async function loginWithUsername(username: string, password: string): Pro
     console.warn('No se pudo actualizar lastLogin en Firestore:', err);
   }
 
-  return { ...userDoc, id: credential.user.uid };
+  const profile: User = userDoc ?? {
+    id: uid,
+    username: trimmed,
+    email,
+    fullName: credential.user.displayName || trimmed,
+    role: 'CASHIER',
+    branchId: 'br-01',
+    is2FAEnabled: false,
+    isActive: true,
+  };
+
+  return { ...profile, id: uid };
 }
 
 /**
