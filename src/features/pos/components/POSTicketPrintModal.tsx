@@ -156,9 +156,12 @@ export const POSTicketPrintModal: React.FC<POSTicketPrintModalProps> = ({ sale, 
   const destinatario = fiscalData?.docType === 99 || !sale.customerName ? 'A Consumidor Final' : sale.customerName;
 
   const ticketNote = (sale.notes || '')
-    .replace(/Factura ARCA #\d+ emitida\. CAE: \S+/g, '')
-    .replace(/Comprobante Interno: \S+/g, '')
-    .replace(/^Recargo \d+%: \$[\d.]+\.\s*/g, '')
+    .replace(/Factura ARCA #\d+ emitida por \$[\d.,]+\s*\([^)]*\)\.\s*CAE:\s*\S+/g, '')
+    .replace(/Factura ARCA #\d+ emitida\.\s*CAE:\s*\S+/g, '')
+    .replace(/Comprobante Interno:\s*\S+/g, '')
+    .replace(/^Recargo \d+%:\s*\$[\d.]+\.\s*/g, '')
+    .replace(/\s*\|\s*$/g, '')
+    .replace(/\|\s*\|/g, '|')
     .trim();
 
   const handlePrint = () => {

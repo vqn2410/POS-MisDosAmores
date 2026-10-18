@@ -2,7 +2,7 @@ import React from 'react';
 import { Box, Typography, Drawer, List, ListItem, ListItemButton, ListItemIcon, ListItemText, Divider } from '@mui/material';
 import { ShoppingCart, Camera, Receipt, History, Menu as MenuIcon } from 'lucide-react';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
-import { ALL_SIDEBAR_ITEMS } from './Sidebar';
+import { ALL_SIDEBAR_ITEMS } from './sidebarItems';
 
 interface MobileNavBarProps {
   onOpenScanner: () => void;

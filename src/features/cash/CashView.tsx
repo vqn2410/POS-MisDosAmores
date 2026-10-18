@@ -60,11 +60,15 @@ export const CashView: React.FC = () => {
       .filter((p) => p.method === 'CASH')
       .reduce((acc, p) => acc + (p.amount - (p.change || 0)), 0);
 
+  const itemsTotalOf = (s: { items: { total: number }[] }) =>
+    s.items.reduce((acc, i) => acc + i.total, 0);
+
   const kioskCashSales = sessionSales.reduce((sum, s) => {
     const kioskTotal = s.items
       .filter((i) => i.product.cashBoxType === 'KIOSK' || !i.product.cashBoxType)
       .reduce((acc, i) => acc + i.total, 0);
-    const share = s.subtotal > 0 ? kioskTotal / s.subtotal : 0;
+    const itemsTotal = itemsTotalOf(s);
+    const share = itemsTotal > 0 ? kioskTotal / itemsTotal : 0;
     return sum + cashOf(s) * share;
   }, 0);
 
@@ -72,7 +76,8 @@ export const CashView: React.FC = () => {
     const cigTotal = s.items
       .filter((i) => i.product.cashBoxType === 'CIGARRILLOS')
       .reduce((acc, i) => acc + i.total, 0);
-    const share = s.subtotal > 0 ? cigTotal / s.subtotal : 0;
+    const itemsTotal = itemsTotalOf(s);
+    const share = itemsTotal > 0 ? cigTotal / itemsTotal : 0;
     return sum + cashOf(s) * share;
   }, 0);
 
@@ -105,7 +110,9 @@ export const CashView: React.FC = () => {
   const totalInvoicedCount = sessionSales.filter((s) => s.fiscalInvoice?.cae).length;
   const totalSalesAmount = sessionSales.reduce((acc, s) => acc + s.grandTotal, 0);
   const totalCollectedAmount = sessionSales.reduce((acc, s) => {
-    const paid = (s.payments || []).reduce((a, p) => a + (p.amount - (p.change || 0)), 0);
+    const paid = (s.payments || [])
+      .filter((p) => p.method !== 'CREDIT')
+      .reduce((a, p) => a + (p.amount - (p.change || 0)), 0);
     return acc + paid;
   }, 0);
 
@@ -147,7 +154,7 @@ export const CashView: React.FC = () => {
   const handleCloseSession = () => {
     if (!session) return;
     const calculated = totalCashInDrawer;
-    const finalAmount = parseFloat(closingAmount) || 0;
+    const finalAmount = Number(closingAmount.replace(',', '.')) || 0;
     closeCashSession.mutate({
       id: session.id,
       data: {

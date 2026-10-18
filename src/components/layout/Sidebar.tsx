@@ -12,50 +12,10 @@ import {
   Chip,
   Button,
 } from '@mui/material';
-import {
-  LayoutDashboard,
-  ShoppingCart,
-  Package,
-  PackageSearch,
-  Boxes,
-  Users,
-  ShoppingBag,
-  Truck,
-  FileText,
-  Wallet,
-  BarChart3,
-  UserCheck,
-  Settings,
-  History,
-  Workflow,
-  Eye,
-  ChevronsLeft,
-  ChevronsRight,
-  ShieldAlert,
-  Landmark,
-} from 'lucide-react';
+import { ChevronsLeft, ChevronsRight, ShieldAlert } from 'lucide-react';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 import { useCashierModeStore } from '../../store/useCashierModeStore';
-
-export const ALL_SIDEBAR_ITEMS = [
-  { id: 'pos', title: 'Ventas (POS)', icon: ShoppingCart, route: '/pos', adminOnly: false },
-  { id: 'dashboard', title: 'Dashboard', icon: LayoutDashboard, route: '/dashboard', adminOnly: true },
-  { id: 'products', title: 'Productos', icon: Package, route: '/products', adminOnly: false },
-  { id: 'stock', title: 'Stock', icon: PackageSearch, route: '/stock', adminOnly: false },
-  { id: 'inventory', title: 'Inventario (Kardex)', icon: Boxes, route: '/inventory', adminOnly: true },
-  { id: 'customers', title: 'Clientes', icon: Users, route: '/customers', adminOnly: false },
-  { id: 'purchases', title: 'Compras', icon: ShoppingBag, route: '/purchases', adminOnly: true },
-  { id: 'suppliers', title: 'Proveedores', icon: Truck, route: '/suppliers', adminOnly: true },
-  { id: 'billing', title: 'Facturación / Ventas', icon: FileText, route: '/billing', adminOnly: false },
-  { id: 'arca', title: 'AFIP Comprobantes', icon: Landmark, route: '/arca', adminOnly: false },
-  { id: 'cash', title: 'Caja & Arqueo', icon: Wallet, route: '/cash', adminOnly: false },
-  { id: 'reports', title: 'Reportes Avanzados', icon: BarChart3, route: '/reports', adminOnly: true },
-  { id: 'users', title: 'Usuarios & Roles', icon: UserCheck, route: '/users', adminOnly: true },
-  { id: 'accessibility', title: 'Accesibilidad', icon: Eye, route: '/accessibility', adminOnly: false },
-  { id: 'settings', title: 'Configuración', icon: Settings, route: '/settings', adminOnly: true },
-  { id: 'logs', title: 'Logs Auditoría', icon: History, route: '/logs', adminOnly: true },
-  { id: 'integrations', title: 'Integraciones MP/ARCA', icon: Workflow, route: '/integrations', adminOnly: true },
-];
+import { ALL_SIDEBAR_ITEMS } from './sidebarItems';
 
 export const Sidebar: React.FC = () => {
   const [collapsed, setCollapsed] = React.useState<boolean>(false);

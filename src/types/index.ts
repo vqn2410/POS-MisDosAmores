@@ -141,6 +141,8 @@ export interface FiscalInvoice {
   docType?: number;
   docNumber?: string;
   observations?: string[];
+  amount?: number;
+  description?: string;
 }
 
 export interface CreditNote {
@@ -202,6 +204,8 @@ export interface Sale {
   payments: SalePayment[];
   notes?: string;
   fiscalInvoice?: FiscalInvoice;
+  fiscalAmount?: number;
+  internalAmount?: number;
   fiscalCreditNote?: FiscalInvoice;
   createdAt: string;
 }

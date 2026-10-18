@@ -18,12 +18,15 @@ import {
   TextField,
   MenuItem,
   CircularProgress,
+  Pagination,
 } from '@mui/material';
 import { Boxes, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
 import type { KardexMovement, InventoryMovementType } from '../../types';
 import { useProducts } from '../../hooks/useProducts';
 import { useKardexMovements, useCreateKardexMovement } from '../../hooks/useKardex';
 import { useAuthStore } from '../../store/useAuthStore';
+
+const PAGE_SIZE = 50;
 
 function toDate(value: unknown): Date {
   if (value instanceof Date) return value;
@@ -39,6 +42,7 @@ export const InventoryView: React.FC = () => {
   const createKardex = useCreateKardexMovement();
   const { user, activeBranch } = useAuthStore();
   const [isModalOpen, setIsModalOpen] = React.useState(false);
+  const [page, setPage] = React.useState(1);
 
   const [selectedProductId, setSelectedProductId] = React.useState<string>('');
   const [movementType, setMovementType] = React.useState<InventoryMovementType>('IN_ADJUSTMENT');
@@ -75,6 +79,11 @@ export const InventoryView: React.FC = () => {
       },
     });
   };
+
+  const totalPages = Math.max(1, Math.ceil(movements.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pageStart = (safePage - 1) * PAGE_SIZE;
+  const pagedMovements = movements.slice(pageStart, pageStart + PAGE_SIZE);
 
   if (movementsLoading) {
     return (
@@ -130,7 +139,7 @@ export const InventoryView: React.FC = () => {
                 </TableCell>
               </TableRow>
             ) : (
-              movements.map((mov) => {
+              pagedMovements.map((mov) => {
                 const isEntry = mov.type.startsWith('IN');
                 return (
                   <TableRow key={mov.id} hover sx={{ minHeight: 64 }}>
@@ -175,6 +184,15 @@ export const InventoryView: React.FC = () => {
           </TableBody>
         </Table>
       </Paper>
+
+      {totalPages > 1 && (
+        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, mt: 3 }}>
+          <Typography variant="caption" sx={{ fontWeight: 700, color: '#64748B' }}>
+            Mostrando {pageStart + 1}–{Math.min(pageStart + PAGE_SIZE, movements.length)} de {movements.length} movimientos
+          </Typography>
+          <Pagination count={totalPages} page={safePage} onChange={(_event, value) => setPage(value)} color="primary" shape="rounded" siblingCount={1} boundaryCount={1} />
+        </Box>
+      )}
 
       {/* Movement Modal */}
       <Dialog open={isModalOpen} onClose={() => setIsModalOpen(false)} maxWidth="sm" fullWidth slotProps={{ paper: { sx: { borderRadius: 4, p: 1 } } }}>

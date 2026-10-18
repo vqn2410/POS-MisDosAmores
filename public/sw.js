@@ -1,5 +1,5 @@
-const CACHE_NAME = 'nexus-pos-v2';
-const STATIC_ASSETS = ['/', '/index.html', '/manifest.json'];
+const CACHE_NAME = 'nexus-pos-v3';
+const STATIC_ASSETS = ['/', '/manifest.json'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -18,6 +18,7 @@ self.addEventListener('activate', (event) => {
           if (key !== CACHE_NAME) {
             return caches.delete(key);
           }
+          return undefined;
         })
       );
     })
@@ -26,14 +27,29 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  if (event.request.method !== 'GET') return;
-  if (event.request.url.startsWith('http') && !event.request.url.startsWith(self.location.origin)) return;
+  const { request } = event;
+  if (request.method !== 'GET') return;
+  if (!request.url.startsWith(self.location.origin)) return;
+
+  // Network-first para navegación/HTML: nunca servir un index.html viejo (rompe la app).
+  if (request.mode === 'navigate' || request.destination === 'document') {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put('/index.html', copy));
+          return response;
+        })
+        .catch(() => caches.match('/index.html'))
+    );
+    return;
+  }
 
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      return cachedResponse || fetch(event.request);
+    caches.match(request).then((cachedResponse) => {
+      return cachedResponse || fetch(request);
     }).catch(() => {
-      if (event.request.headers.get('accept')?.includes('text/html')) {
+      if (request.headers.get('accept')?.includes('text/html')) {
         return caches.match('/index.html');
       }
       return new Response('', { status: 503 });

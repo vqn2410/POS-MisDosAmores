@@ -15,7 +15,9 @@
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
     <script>
-      if ('serviceWorker' in navigator) {
+      // En desarrollo el service worker cachea el HTML y termina sirviendo builds viejos (pantalla en blanco).
+      const isDevHost = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+      if (!isDevHost && 'serviceWorker' in navigator) {
         window.addEventListener('load', () => {
           navigator.serviceWorker.register('/sw.js').catch(() => {});
         });

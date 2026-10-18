@@ -17,7 +17,8 @@ export function useCurrentCashSession() {
     queryKey: ['cash_sessions', 'current'],
     queryFn: async () => {
       const sessions = await fs.getWhere<CashSession>(COL, 'isOpen', '==', true);
-      return sessions.length > 0 ? sessions[0] : null;
+      const ordered = [...sessions].sort((a, b) => (b.openedAt || '').localeCompare(a.openedAt || ''));
+      return ordered.length > 0 ? ordered[0] : null;
     },
   });
 }

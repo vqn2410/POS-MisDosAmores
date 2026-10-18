@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import * as fs from '../services/firestoreService';
-import type { CartItem, InventoryMovementType, KardexMovement } from '../types';
+import type { CartItem, InventoryMovementType, KardexMovement, Product } from '../types';
 import { useAuthStore } from '../store/useAuthStore';
 
 const COL = 'kardex_movements';
@@ -37,28 +37,29 @@ export function useRegisterBulkKardex() {
   return useMutation({
     mutationFn: async ({ items, type, reference, notes }: { items: CartItem[]; type: InventoryMovementType; reference: string; notes?: string }) => {
       const sign = type.startsWith('IN') ? 1 : -1;
-      const movements: Array<Omit<KardexMovement, 'id'>> = items
-        .filter(affectsStock)
-        .map((item) => {
-          const quantity = stockQty(item);
-          const previousStock = item.product.stock ?? 0;
-          return {
-            productId: item.product.id,
-            productName: item.product.name,
-            productSku: item.product.sku,
-            branchId: activeBranch?.id || 'br-01',
-            branchName: activeBranch?.name || 'Sucursal Principal',
-            type,
-            quantity,
-            previousStock,
-            newStock: previousStock + sign * quantity,
-            unitCost: item.product.costPrice ?? 0,
-            reference,
-            notes,
-            createdAt: new Date().toISOString(),
-            userName: user?.fullName || 'Sistema',
-          };
+      const movements: Array<Omit<KardexMovement, 'id'>> = [];
+      for (const item of items.filter(affectsStock)) {
+        const quantity = stockQty(item);
+        // Leer el stock actual para que previousStock del kardex sea confiable.
+        const fresh = await fs.getById<Product>('products', item.product.id).catch(() => null);
+        const previousStock = fresh?.stock ?? item.product.stock ?? 0;
+        movements.push({
+          productId: item.product.id,
+          productName: item.product.name,
+          productSku: item.product.sku,
+          branchId: activeBranch?.id || 'br-01',
+          branchName: activeBranch?.name || 'Sucursal Principal',
+          type,
+          quantity,
+          previousStock,
+          newStock: previousStock + sign * quantity,
+          unitCost: item.product.costPrice ?? 0,
+          reference,
+          notes,
+          createdAt: new Date().toISOString(),
+          userName: user?.fullName || 'Sistema',
         });
+      }
       for (const movement of movements) {
         await fs.create<KardexMovement>(COL, movement);
         await fs.adjustStock(movement.productId, sign * movement.quantity);

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Paper, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography } from '@mui/material';
+import { Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Pagination, Paper, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography } from '@mui/material';
 import { CircleCheck, ClipboardPaste, FileMinus, FileText, Landmark, Search } from 'lucide-react';
 import { useArcaReportVouchers, useImportArcaReportVouchers } from '../../hooks/useArcaReportVouchers';
 import { useCreditNotes } from '../../hooks/useCreditNotes';
@@ -7,6 +7,7 @@ import { useSales } from '../../hooks/useSales';
 import { getArcaInvoice, type ArcaComprobante, type ArcaInvoiceDetails } from '../../services/arcaApi';
 import type { FiscalInvoice } from '../../types';
 
+const PAGE_SIZE = 50;
 const labels: Record<number, string> = { 1: 'Factura A', 3: 'Nota Crédito A', 6: 'Factura B', 8: 'Nota Crédito B', 11: 'Factura C', 13: 'Nota Crédito C' };
 const invoiceTypes = new Set([1, 6, 11]);
 const creditNoteTypes = new Set([3, 8, 13]);
@@ -48,6 +49,11 @@ export const ArcaView: React.FC = () => {
   const [importOpen, setImportOpen] = React.useState(false);
   const [importText, setImportText] = React.useState('');
   const [importError, setImportError] = React.useState<string | null>(null);
+  const [page, setPage] = React.useState(1);
+
+  React.useEffect(() => {
+    setPage(1);
+  }, [date, filter]);
 
   const rows = React.useMemo(() => {
     const seen = new Set<string>();
@@ -78,6 +84,10 @@ export const ArcaView: React.FC = () => {
     if (filter === 'NC') return creditNoteTypes.has(row.voucherType);
     return true;
   });
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pageStart = (safePage - 1) * PAGE_SIZE;
+  const paged = filtered.slice(pageStart, pageStart + PAGE_SIZE);
   const totals = filtered.reduce((acc, row) => ({
     invoices: acc.invoices + Number(invoiceTypes.has(row.voucherType)),
     creditNotes: acc.creditNotes + Number(creditNoteTypes.has(row.voucherType)),
@@ -139,18 +149,27 @@ export const ArcaView: React.FC = () => {
       <Paper sx={{ overflow: 'auto', border: '1px solid #E2E8F0', borderRadius: 3 }}>
         <Table sx={{ minWidth: 800 }}>
           <TableHead><TableRow sx={{ bgcolor: '#F8FAFC' }}>{['Tipo', 'Comprobante', 'Emisión', 'Importe', 'Estado', 'CAE', 'AFIP'].map((label) => <TableCell key={label} sx={{ fontWeight: 900 }}>{label}</TableCell>)}</TableRow></TableHead>
-          <TableBody>{filtered.map((row) => <TableRow key={`${row.voucherType}-${number(row)}`}>
+          <TableBody>{paged.map((row) => <TableRow key={`${row.voucherType}-${number(row)}`}>
             <TableCell><Chip size="small" label={labels[row.voucherType] ?? `Tipo ${row.voucherType}`} sx={{ fontWeight: 800, bgcolor: creditNoteTypes.has(row.voucherType) ? '#FEF3C7' : '#EFF6FF', color: creditNoteTypes.has(row.voucherType) ? '#B45309' : '#1D4ED8' }} /></TableCell>
             <TableCell sx={{ fontWeight: 800 }}>{number(row)}{row.associated && <Typography variant="caption" sx={{ display: 'block', color: '#64748B' }}>Vinculada a {row.associated}</Typography>}</TableCell>
             <TableCell>{new Date(row.emittedAt).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' })}</TableCell>
             <TableCell sx={{ color: creditNoteTypes.has(row.voucherType) ? '#B45309' : '#0F172A', fontWeight: 800 }}>{money(row.amount)}</TableCell>
             <TableCell><Chip size="small" label={row.source === 'AFIP' ? 'Falta en POS' : creditNoteTypes.has(row.voucherType) ? 'NC emitida' : 'Registrado'} color={row.source === 'AFIP' ? 'warning' : creditNoteTypes.has(row.voucherType) ? 'success' : 'default'} sx={{ fontWeight: 800 }} /></TableCell>
             <TableCell>{row.cae || '—'}</TableCell>
-            <TableCell><Button size="small" variant="outlined" disabled={checking !== null} onClick={() => void verify(row)} startIcon={checking?.voucherNumber === row.voucherNumber ? <CircularProgress size={14} /> : <Search size={15} />}>Verificar</Button></TableCell>
+            <TableCell><Button size="small" variant="outlined" disabled={checking !== null} onClick={() => void verify(row)} startIcon={checking?.voucherType === row.voucherType && checking?.salesPoint === row.salesPoint && checking?.voucherNumber === row.voucherNumber ? <CircularProgress size={14} /> : <Search size={15} />}>Verificar</Button></TableCell>
           </TableRow>)}</TableBody>
         </Table>
         {filtered.length === 0 && <Box sx={{ p: 5, textAlign: 'center' }}><Typography sx={{ fontWeight: 800, color: '#64748B' }}>No hay comprobantes fiscales guardados para este filtro.</Typography></Box>}
       </Paper>
+
+      {totalPages > 1 && (
+        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, mt: 3 }}>
+          <Typography variant="caption" sx={{ fontWeight: 700, color: '#64748B' }}>
+            Mostrando {pageStart + 1}–{Math.min(pageStart + PAGE_SIZE, filtered.length)} de {filtered.length} comprobantes
+          </Typography>
+          <Pagination count={totalPages} page={safePage} onChange={(_event, value) => setPage(value)} color="primary" shape="rounded" siblingCount={1} boundaryCount={1} />
+        </Box>
+      )}
 
       <Dialog open={Boolean(verified || verifyError)} onClose={() => { setVerified(null); setVerifyError(null); }} fullWidth maxWidth="sm">
         <DialogTitle>Verificación en AFIP</DialogTitle>

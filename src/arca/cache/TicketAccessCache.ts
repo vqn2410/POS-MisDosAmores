@@ -71,7 +71,7 @@ export class TicketAccessCache {
     if (typeof localStorage !== 'undefined') {
       try {
         localStorage.removeItem(key);
-      } catch (err) {
+      } catch {
         // silent
       }
     }

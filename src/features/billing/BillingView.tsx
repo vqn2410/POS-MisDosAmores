@@ -18,6 +18,7 @@ import {
   TextField,
   MenuItem,
   Alert,
+  Pagination,
   useTheme,
   useMediaQuery,
 } from '@mui/material';
@@ -37,6 +38,8 @@ import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 import { paymentMethodKey, paymentMethodLabel } from '../pos/utils/paymentLabels';
 
 const CREDIT_NOTE_TYPES: Record<number, number> = { 1: 3, 3: 1, 6: 8, 8: 6, 11: 13, 13: 11, 2: 5, 5: 2, 109: 110, 110: 109 };
+
+const COMPROBANTES_PAGE_SIZE = 50;
 
 const PAYMENT_FILTERS: { value: string; label: string }[] = [
   { value: 'ALL', label: 'Todos los medios' },
@@ -97,6 +100,19 @@ function formatIssuedAt(value: unknown): string {
     : date.toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' });
 }
 
+function fiscalAmountForSale(sale: Sale): number {
+  if (typeof sale.fiscalAmount === 'number') return sale.fiscalAmount;
+  const amount = sale.payments
+    .filter((payment) => payment.method === 'QR' || payment.method === 'CARD')
+    .reduce((sum, payment) => sum + payment.amount, 0);
+  return amount > 0 ? Math.min(sale.grandTotal, amount) : sale.fiscalInvoice ? sale.grandTotal : 0;
+}
+
+function internalAmountForSale(sale: Sale): number {
+  if (typeof sale.internalAmount === 'number') return sale.internalAmount;
+  return Math.max(0, sale.grandTotal - fiscalAmountForSale(sale));
+}
+
 const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2, py: 1, borderBottom: '1px solid', borderColor: '#F1F5F9' }}>
     <Typography variant="caption" sx={{ fontWeight: 800, color: '#64748B', textTransform: 'uppercase', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>
@@ -128,6 +144,11 @@ export const BillingView: React.FC = () => {
   const [paymentFilter, setPaymentFilter] = React.useState('ALL');
   const [dateFrom, setDateFrom] = React.useState('');
   const [dateTo, setDateTo] = React.useState('');
+  const [page, setPage] = React.useState(1);
+
+  React.useEffect(() => {
+    setPage(1);
+  }, [search, statusFilter, typeFilter, paymentFilter, dateFrom, dateTo]);
 
   const clearFilters = () => {
     setSearch('');
@@ -217,11 +238,7 @@ export const BillingView: React.FC = () => {
           grandTotal: row.amount,
           associatedInvoice: { voucherType: row.voucherType, salesPoint: row.salesPoint, voucherNumber: row.number },
         });
-        log.push({
-          ok: true,
-          message: `NC #${fiscalResult.voucherNumber} (CAE ${fiscalResult.cae}) emitida para anular ${String(row.salesPoint).padStart(4, '0')}-${String(row.number).padStart(8, '0')} ($${row.amount.toFixed(2)})`,
-        });
-        createCreditNote.mutate({
+        await createCreditNote.mutateAsync({
           voucherNumber: fiscalResult.voucherNumber,
           voucherType: fiscalResult.voucherType,
           salesPoint: fiscalResult.salesPoint,
@@ -231,6 +248,10 @@ export const BillingView: React.FC = () => {
           associatedVoucher: { voucherType: row.voucherType, salesPoint: row.salesPoint, voucherNumber: row.number },
           source: 'SUBSANACION',
           createdAt: new Date().toISOString(),
+        });
+        log.push({
+          ok: true,
+          message: `NC #${fiscalResult.voucherNumber} (CAE ${fiscalResult.cae}) emitida para anular ${String(row.salesPoint).padStart(4, '0')}-${String(row.number).padStart(8, '0')} ($${row.amount.toFixed(2)})`,
         });
       } catch (err) {
         log.push({
@@ -295,9 +316,9 @@ export const BillingView: React.FC = () => {
           docType: original.docType ?? 99,
           docNumber: original.docNumber || '00000000',
           condicionIvaId: 5,
-          subtotal: sale.grandTotal,
+          subtotal: fiscalAmountForSale(sale),
           taxTotal: 0,
-          grandTotal: sale.grandTotal,
+          grandTotal: fiscalAmountForSale(sale),
           associatedInvoice: {
             voucherType: original.voucherType,
             salesPoint: original.salesPoint,
@@ -316,6 +337,7 @@ export const BillingView: React.FC = () => {
           docType: original.docType ?? 99,
           docNumber: original.docNumber || '00000000',
           observations: fiscalResult.observations,
+          amount: fiscalAmountForSale(sale),
         };
 
         updates.status = 'REFUNDED';
@@ -324,26 +346,30 @@ export const BillingView: React.FC = () => {
       } catch (err) {
         addNotification({
           title: 'No se pudo emitir Nota de Crédito',
-          message: `El comprobante se anuló, pero ARCA no autorizó la NC del original #${original.voucherNumber}: ${err instanceof Error ? err.message : String(err)}`,
-          type: 'warning',
+          message: `No se anuló la venta: ARCA no autorizó la NC del comprobante #${original.voucherNumber}: ${err instanceof Error ? err.message : String(err)}`,
+          type: 'error',
         });
+        setCancelTargetId(null);
+        return;
       }
     }
 
-    updateSale.mutate(
-      { id: sale.id, data: updates },
-      {
-        onSuccess: () => {
-          registerBulkKardex.mutate({
-            items: sale.items,
-            type: 'IN_RETURN',
-            reference: `REVERSION-${sale.ticketNumber}`,
-            notes: 'Reintegro de stock por anulacion / nota de credito',
-          });
-          setCancelTargetId(null);
-        },
-      },
-    );
+    try {
+      await updateSale.mutateAsync({ id: sale.id, data: updates });
+      await registerBulkKardex.mutateAsync({
+        items: sale.items,
+        type: 'IN_RETURN',
+        reference: `REVERSION-${sale.ticketNumber}`,
+        notes: 'Reintegro de stock por anulacion / nota de credito',
+      });
+      setCancelTargetId(null);
+    } catch (err) {
+      addNotification({
+        title: 'No se pudo anular la venta',
+        message: err instanceof Error ? err.message : 'Ocurrió un error al anular la venta.',
+        type: 'error',
+      });
+    }
   };
 
   const handleEmitInvoice = async () => {
@@ -359,16 +385,20 @@ export const BillingView: React.FC = () => {
       return;
     }
 
+    let emitted: { voucherNumber: number; cae: string } | null = null;
     try {
+      const fiscalAmount = fiscalAmountForSale(sale);
       const { fiscalResult } = await createArcaInvoice({
         concept: 1,
         docType: 99,
         docNumber: '00000000',
         condicionIvaId: 5,
-        subtotal: sale.grandTotal,
+        subtotal: fiscalAmount,
         taxTotal: 0,
-        grandTotal: sale.grandTotal,
+        grandTotal: fiscalAmount,
+        items: [{ description: 'Productos varios', quantity: 1, unitPrice: fiscalAmount, taxRate: 0, subtotal: fiscalAmount }],
       });
+      emitted = { voucherNumber: fiscalResult.voucherNumber, cae: fiscalResult.cae };
 
       const invoice: FiscalInvoice = {
         cae: fiscalResult.cae,
@@ -381,35 +411,41 @@ export const BillingView: React.FC = () => {
         docType: 99,
         docNumber: '00000000',
         observations: fiscalResult.observations,
+        amount: fiscalAmount,
+        description: 'Productos varios',
       };
 
-      updateSale.mutate(
-        { id: sale.id, data: { fiscalInvoice: invoice, notes: `${sale.notes ? `${sale.notes} | ` : ''}Factura ARCA #${fiscalResult.voucherNumber} emitida. CAE: ${fiscalResult.cae}` } },
-        {
-          onSuccess: () => {
-            addNotification({
-              title: 'Factura ARCA emitida',
-              message: `Venta #${sale.ticketNumber} facturada. CAE: ${fiscalResult.cae}`,
-              type: 'success',
-            });
-            setInvoiceTargetId(null);
-          },
-          onError: () => {
-            addNotification({
-              title: 'Factura emitida pero no guardada',
-              message: `El comprobante #${fiscalResult.voucherNumber} ya fue emitido en AFIP (CAE ${fiscalResult.cae}). Recargá la vista; no vuelvas a facturar esta venta para evitar duplicados.`,
-              type: 'warning',
-            });
-            setInvoiceTargetId(null);
-          },
+      await updateSale.mutateAsync({
+        id: sale.id,
+        data: {
+          fiscalInvoice: invoice,
+          fiscalAmount,
+          internalAmount: internalAmountForSale(sale),
+          notes: `${sale.notes ? `${sale.notes} | ` : ''}Factura ARCA #${fiscalResult.voucherNumber} emitida por $${fiscalAmount.toFixed(2)} (Productos varios). CAE: ${fiscalResult.cae}`,
         },
-      );
-    } catch (err) {
-      addNotification({
-        title: 'No se pudo emitir la factura ARCA',
-        message: err instanceof Error ? err.message : String(err),
-        type: 'error',
       });
+
+      addNotification({
+        title: 'Factura ARCA emitida',
+        message: `Venta #${sale.ticketNumber} facturada. CAE: ${fiscalResult.cae}`,
+        type: 'success',
+      });
+      setInvoiceTargetId(null);
+    } catch (err) {
+      if (emitted) {
+        addNotification({
+          title: 'Factura emitida pero no guardada',
+          message: `El comprobante #${emitted.voucherNumber} ya fue emitido en AFIP (CAE ${emitted.cae}). Recargá la vista; no vuelvas a facturar esta venta para evitar duplicados.`,
+          type: 'warning',
+        });
+        setInvoiceTargetId(null);
+      } else {
+        addNotification({
+          title: 'No se pudo emitir la factura ARCA',
+          message: err instanceof Error ? err.message : String(err),
+          type: 'error',
+        });
+      }
     } finally {
       emittingRef.current.delete(id);
       setEmittingIds(new Set(emittingRef.current));
@@ -418,11 +454,12 @@ export const BillingView: React.FC = () => {
 
   const needsInvoice = (id: string): boolean => {
     const s = sales.find((x) => x.id === id);
-    return !!s && s.status === 'COMPLETED' && !s.fiscalInvoice && !emittingRef.current.has(id) && s.payments?.some((p) => p.method === 'QR' || p.method === 'CARD');
+    return !!s && s.status === 'COMPLETED' && !s.fiscalInvoice && !emittingRef.current.has(id) && fiscalAmountForSale(s) > 0;
   };
 
   interface ComprobanteRow {
     id: string;
+    saleId?: string;
     ticketNumber: string;
     receiverName: string;
     taxId: string;
@@ -436,35 +473,41 @@ export const BillingView: React.FC = () => {
     createdAt: unknown;
     hasFiles: boolean;
     ncInfo?: { associated: string };
+    detail?: string;
   }
 
-  const saleRows: ComprobanteRow[] = sales.map((s) => {
+  const saleRows: ComprobanteRow[] = sales.flatMap((s) => {
     const notes = typeof s.notes === 'string' ? s.notes : '';
-    return {
-      id: s.id,
-      ticketNumber: s.ticketNumber,
-      receiverName: s.customerName || 'Consumidor Final',
-      taxId: '',
-      total: s.grandTotal,
-      type: notes.includes('CAE') ? ('ARCA' as const) : ('INTERNO' as const),
-      kind: 'FACTURA' as const,
-      cae: notes.includes('CAE') ? notes.match(/CAE: (\S+)/)?.[1] || '' : '',
-      voucherNumber: s.fiscalInvoice?.voucherNumber ?? (Number(notes.match(/Factura ARCA #(\d+)/)?.[1] || 0) || null),
-      status: statusLabel(s),
-      rawStatus: s.status,
-      createdAt: s.createdAt,
-      hasFiles: false,
-    };
+    const rows: ComprobanteRow[] = [];
+    const fiscalAmount = fiscalAmountForSale(s);
+    const internalAmount = internalAmountForSale(s);
+    if (s.fiscalInvoice) {
+      rows.push({
+        id: `${s.id}-arca`, saleId: s.id, ticketNumber: s.ticketNumber, receiverName: s.customerName || 'Consumidor Final', taxId: '',
+        total: s.fiscalInvoice.amount ?? fiscalAmount, type: 'ARCA', kind: 'FACTURA', cae: s.fiscalInvoice.cae || notes.match(/CAE: (\S+)/)?.[1] || '',
+        voucherNumber: s.fiscalInvoice.voucherNumber, status: statusLabel(s), rawStatus: s.status, createdAt: s.createdAt, hasFiles: false, detail: s.fiscalInvoice.description ?? 'Productos varios',
+      });
+    }
+    const pendingFiscal = !s.fiscalInvoice && fiscalAmount > 0;
+    if (internalAmount > 0 || !s.fiscalInvoice) {
+      rows.push({
+        id: `${s.id}-interno`, saleId: s.id, ticketNumber: s.ticketNumber, receiverName: s.customerName || 'Consumidor Final', taxId: '',
+        total: s.fiscalInvoice ? internalAmount : fiscalAmount + internalAmount, type: 'INTERNO', kind: 'FACTURA', cae: '', voucherNumber: null,
+        status: statusLabel(s), rawStatus: s.status, createdAt: s.createdAt, hasFiles: false, detail: pendingFiscal ? 'Pendiente de facturar' : undefined,
+      });
+    }
+    return rows;
   });
 
   const anulacionNcRows: ComprobanteRow[] = sales
     .filter((s) => s.fiscalCreditNote)
     .map((s) => ({
       id: `${s.id}-nc`,
+      saleId: s.id,
       ticketNumber: `NC #${String(s.fiscalCreditNote!.voucherNumber).padStart(8, '0')}`,
       receiverName: 'Consumidor Final',
       taxId: '',
-      total: s.grandTotal,
+      total: s.fiscalCreditNote!.amount ?? fiscalAmountForSale(s),
       type: 'ARCA' as const,
       kind: 'NC' as const,
       cae: s.fiscalCreditNote!.cae,
@@ -506,7 +549,7 @@ export const BillingView: React.FC = () => {
     if (statusFilter !== 'ALL' && c.rawStatus !== statusFilter) return false;
     if (typeFilter !== 'ALL' && c.type !== typeFilter) return false;
     if (paymentFilter !== 'ALL') {
-      const methods = sales.find((s) => s.id === c.id)?.payments?.map((p) => paymentMethodKey(p)) ?? [];
+      const methods = sales.find((s) => s.id === (c.saleId ?? c.id))?.payments?.map((p) => paymentMethodKey(p)) ?? [];
       if (!methods.includes(paymentFilter)) return false;
     }
     if (dateFrom || dateTo) {
@@ -523,6 +566,11 @@ export const BillingView: React.FC = () => {
     return true;
   });
 
+  const totalPages = Math.max(1, Math.ceil(filteredComprobantes.length / COMPROBANTES_PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pageStart = (safePage - 1) * COMPROBANTES_PAGE_SIZE;
+  const pagedComprobantes = filteredComprobantes.slice(pageStart, pageStart + COMPROBANTES_PAGE_SIZE);
+
   const renderActions = (c: (typeof comprobantes)[number], align: 'flex-start' | 'flex-end' = 'flex-end') => {
     if (c.kind === 'NC') {
       return (
@@ -538,33 +586,33 @@ export const BillingView: React.FC = () => {
         variant="outlined"
         startIcon={<Printer size={16} />}
         onClick={() => {
-          const sale = sales.find((item) => item.id === c.id);
+          const sale = sales.find((item) => item.id === (c.saleId ?? c.id));
           if (sale) setPrintSale(sale);
         }}
         sx={{ borderRadius: 2.5, fontWeight: 800, minHeight: 36 }}
       >
         Imprimir
       </Button>
-      {needsInvoice(c.id) && (
+      {c.type === 'INTERNO' && needsInvoice(c.saleId ?? c.id) && (
         <Button
           size="small"
           variant="contained"
           color="primary"
-          startIcon={emittingIds.has(c.id) ? <CircularProgress size={14} color="inherit" /> : <Receipt size={16} />}
-          disabled={emittingIds.has(c.id)}
-          onClick={() => setInvoiceTargetId(c.id)}
+          startIcon={emittingIds.has(c.saleId ?? c.id) ? <CircularProgress size={14} color="inherit" /> : <Receipt size={16} />}
+          disabled={emittingIds.has(c.saleId ?? c.id)}
+          onClick={() => setInvoiceTargetId(c.saleId ?? c.id)}
           sx={{ borderRadius: 2.5, fontWeight: 800, minHeight: 36 }}
         >
-          {emittingIds.has(c.id) ? 'Emitiendo...' : 'Facturar'}
+          {emittingIds.has(c.saleId ?? c.id) ? 'Emitiendo...' : 'Facturar'}
         </Button>
       )}
-      {c.rawStatus === 'COMPLETED' && !sales.find((s) => s.id === c.id)?.fiscalCreditNote && (
+      {c.type === 'ARCA' && c.rawStatus === 'COMPLETED' && !sales.find((s) => s.id === (c.saleId ?? c.id))?.fiscalCreditNote && (
         <Button
           size="small"
           variant="outlined"
           color="error"
           startIcon={<XCircle size={16} />}
-          onClick={() => setCancelTargetId(c.id)}
+          onClick={() => setCancelTargetId(c.saleId ?? c.id)}
           sx={{ borderRadius: 2.5, fontWeight: 800, minHeight: 36 }}
         >
           Anular
@@ -689,7 +737,7 @@ export const BillingView: React.FC = () => {
           </Button>
         </Box>
         <Typography variant="caption" sx={{ fontWeight: 700, color: '#64748B', mt: 1.5, display: 'block' }}>
-          Mostrando {filteredComprobantes.length} de {comprobantes.length} comprobantes
+          Mostrando {filteredComprobantes.length === 0 ? 0 : pageStart + 1}–{Math.min(pageStart + COMPROBANTES_PAGE_SIZE, filteredComprobantes.length)} de {filteredComprobantes.length} comprobantes filtrados ({comprobantes.length} en total)
         </Typography>
       </Paper>
 
@@ -702,8 +750,8 @@ export const BillingView: React.FC = () => {
               </Typography>
             </Paper>
           ) : (
-            filteredComprobantes.map((c) => {
-              const sale = sales.find((s) => s.id === c.id);
+            pagedComprobantes.map((c) => {
+              const sale = sales.find((s) => s.id === (c.saleId ?? c.id));
               const payments = sale?.payments || [];
               return (
                 <Paper key={c.id} elevation={1} sx={{ p: 2.5, borderRadius: 4, border: '2px solid', borderColor: '#E2E8F0', bgcolor: '#FFFFFF' }}>
@@ -721,9 +769,9 @@ export const BillingView: React.FC = () => {
                     {c.kind === 'NC' ? (
                       <Chip label="Nota de Crédito" color="warning" size="small" sx={{ fontWeight: 800, borderRadius: 2, bgcolor: '#FEF3C7', color: '#92400E' }} />
                     ) : c.type === 'ARCA' ? (
-                      <Chip label="ARCA" color="primary" size="small" sx={{ fontWeight: 800, borderRadius: 2 }} />
+                      <Box><Chip label="ARCA" color="primary" size="small" sx={{ fontWeight: 800, borderRadius: 2 }} />{c.detail && <Typography variant="caption" sx={{ display: 'block', mt: 0.5, color: '#64748B', fontWeight: 700 }}>{c.detail}</Typography>}</Box>
                     ) : (
-                      <Chip label="Interno" variant="outlined" color="default" size="small" sx={{ fontWeight: 800, borderRadius: 2, borderColor: '#94A3B8', color: '#475569' }} />
+                      <Box><Chip label="Interno" variant="outlined" color="default" size="small" sx={{ fontWeight: 800, borderRadius: 2, borderColor: '#94A3B8', color: '#475569' }} />{c.detail && <Typography variant="caption" sx={{ display: 'block', mt: 0.5, color: '#64748B', fontWeight: 700 }}>{c.detail}</Typography>}</Box>
                     )}
                   </Field>
                   <Field label="Medio de pago">
@@ -783,7 +831,7 @@ export const BillingView: React.FC = () => {
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredComprobantes.map((c) => (
+                pagedComprobantes.map((c) => (
                   <TableRow key={c.id} hover sx={{ minHeight: 64 }}>
                     <TableCell sx={{ fontWeight: 700, fontFamily: 'monospace' }}>{c.ticketNumber}</TableCell>
                     <TableCell sx={{ whiteSpace: 'nowrap', color: '#475569', fontWeight: 600 }}>
@@ -796,14 +844,14 @@ export const BillingView: React.FC = () => {
                       {c.kind === 'NC' ? (
                         <Chip label="Nota de Crédito" color="warning" size="small" sx={{ fontWeight: 800, borderRadius: 2, bgcolor: '#FEF3C7', color: '#92400E' }} />
                       ) : c.type === 'ARCA' ? (
-                        <Chip label="ARCA" color="primary" size="small" sx={{ fontWeight: 800, borderRadius: 2 }} />
+                        <Box><Chip label="ARCA" color="primary" size="small" sx={{ fontWeight: 800, borderRadius: 2 }} />{c.detail && <Typography variant="caption" sx={{ display: 'block', mt: 0.5, color: '#64748B', fontWeight: 700 }}>{c.detail}</Typography>}</Box>
                       ) : (
-                        <Chip label="Interno" variant="outlined" color="default" size="small" sx={{ fontWeight: 800, borderRadius: 2, borderColor: '#94A3B8', color: '#475569' }} />
+                        <Box><Chip label="Interno" variant="outlined" color="default" size="small" sx={{ fontWeight: 800, borderRadius: 2, borderColor: '#94A3B8', color: '#475569' }} />{c.detail && <Typography variant="caption" sx={{ display: 'block', mt: 0.5, color: '#64748B', fontWeight: 700 }}>{c.detail}</Typography>}</Box>
                       )}
                     </TableCell>
                     <TableCell>
                       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                        {(sales.find((s) => s.id === c.id)?.payments || []).map((p, i) => (
+                        {(sales.find((s) => s.id === (c.saleId ?? c.id))?.payments || []).map((p, i) => (
                           <Chip key={i} label={paymentMethodLabel(p)} size="small" variant="outlined" sx={{ fontWeight: 800 }} />
                         ))}
                         {c.kind === 'NC' && c.ncInfo && (
@@ -818,7 +866,7 @@ export const BillingView: React.FC = () => {
                     </TableCell>
                     <TableCell sx={{ fontWeight: 900, color: c.kind === 'NC' ? '#B45309' : '#2563EB', fontSize: '1.15rem' }}>${c.total.toFixed(2)}</TableCell>
                     <TableCell>
-                      <Chip label={c.status} color={c.kind === 'NC' ? 'warning' : statusColor(sales.find(s => s.id === c.id)!)}
+                      <Chip label={c.status} color={c.kind === 'NC' ? 'warning' : statusColor(sales.find(s => s.id === (c.saleId ?? c.id))!)}
                         size="medium" sx={{ fontWeight: 800 }} />
                     </TableCell>
                     <TableCell>
@@ -835,6 +883,12 @@ export const BillingView: React.FC = () => {
             </TableBody>
           </Table>
         </Paper>
+      )}
+
+      {totalPages > 1 && (
+        <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
+          <Pagination count={totalPages} page={safePage} onChange={(_e, p) => setPage(p)} color="primary" shape="rounded" siblingCount={1} boundaryCount={1} />
+        </Box>
       )}
       </Box>
 

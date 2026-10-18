@@ -180,6 +180,18 @@ function buildStubInvoiceResult(payload, config) {
   };
 }
 
+// Serializa la emisión de comprobantes en este proceso para evitar que dos
+// pedidos concurrentes lean el mismo "último autorizado" y pidan el mismo número.
+let invoiceQueue = Promise.resolve();
+function withInvoiceLock(task) {
+  const run = invoiceQueue.then(task, task);
+  invoiceQueue = run.then(
+    () => undefined,
+    () => undefined
+  );
+  return run;
+}
+
 export class WsfeService {
   constructor(config) {
     this.config = config || loadArcaConfig();
@@ -190,6 +202,10 @@ export class WsfeService {
       return buildStubInvoiceResult(payload, this.config);
     }
 
+    return withInvoiceLock(() => this._emitLocked(payload, ta));
+  }
+
+  async _emitLocked(payload, ta) {
     const salesPoint = this.config.salesPoint;
     const voucherType = Number(payload.voucherType);
     let voucherNumber = Number(payload.voucherNumber || 0);

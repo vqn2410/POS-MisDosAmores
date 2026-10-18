@@ -94,20 +94,34 @@ export async function remove(collectionName: string, id: string): Promise<void> 
   await deleteDoc(doc(db, collectionName, id));
 }
 
+const FIRESTORE_BATCH_LIMIT = 450;
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size));
+  }
+  return chunks;
+}
+
 export async function updateMany<T>(collectionName: string, updates: Array<{ id: string; data: Partial<T> }>): Promise<void> {
-  const batch = writeBatch(db);
-  updates.forEach(({ id, data }) => {
-    batch.update(doc(db, collectionName, id), stripUndefined({ ...data, updatedAt: serverTimestamp() }) as any);
-  });
-  await batch.commit();
+  for (const group of chunk(updates, FIRESTORE_BATCH_LIMIT)) {
+    const batch = writeBatch(db);
+    group.forEach(({ id, data }) => {
+      batch.update(doc(db, collectionName, id), stripUndefined({ ...data, updatedAt: serverTimestamp() }) as any);
+    });
+    await batch.commit();
+  }
 }
 
 export async function upsertMany<T>(collectionName: string, entries: Array<{ id: string; data: Omit<T, 'id'> }>): Promise<void> {
-  const batch = writeBatch(db);
-  entries.forEach(({ id, data }) => {
-    batch.set(doc(db, collectionName, id), stripUndefined({ ...data, updatedAt: serverTimestamp() }), { merge: true });
-  });
-  await batch.commit();
+  for (const group of chunk(entries, FIRESTORE_BATCH_LIMIT)) {
+    const batch = writeBatch(db);
+    group.forEach(({ id, data }) => {
+      batch.set(doc(db, collectionName, id), stripUndefined({ ...data, updatedAt: serverTimestamp() }), { merge: true });
+    });
+    await batch.commit();
+  }
 }
 
 export { serverTimestamp };

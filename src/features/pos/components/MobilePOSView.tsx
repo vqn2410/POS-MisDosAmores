@@ -79,6 +79,22 @@ export const MobilePOSView: React.FC<MobilePOSViewProps> = ({ onOpenScanner }) =
     ticketScrollRef.current?.scrollTo({ top: ticketScrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [cart]);
 
+  const tryAddToCart = (product: Product, quantity = 1): boolean => {
+    const quantityInCart = cart
+      .filter((item) => item.product.id === product.id)
+      .reduce((total, item) => total + item.quantity, 0);
+    if (product.tracksStock !== false && quantityInCart + quantity > product.stock) {
+      addNotification({
+        title: 'Producto sin stock',
+        message: `${product.name} no tiene stock suficiente (disponible: ${product.stock}).`,
+        type: 'warning',
+      });
+      return false;
+    }
+    addProductToCart(product, quantity);
+    return true;
+  };
+
   const handleSearchSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const trimmed = searchTerm.trim();
@@ -92,12 +108,13 @@ export const MobilePOSView: React.FC<MobilePOSViewProps> = ({ onOpenScanner }) =
       );
       if (qtyTargetProduct) {
         if (qtyTargetProduct.saleType !== 'WEIGHT') {
-          addProductToCart(qtyTargetProduct, qtyResult.quantity);
-          addNotification({
-            title: 'Producto Agregado',
-            message: `${qtyTargetProduct.name} × ${qtyResult.quantity} agregado al ticket`,
-            type: 'success',
-          });
+          if (tryAddToCart(qtyTargetProduct, qtyResult.quantity)) {
+            addNotification({
+              title: 'Producto Agregado',
+              message: `${qtyTargetProduct.name} × ${qtyResult.quantity} agregado al ticket`,
+              type: 'success',
+            });
+          }
         } else {
           setWeightModalProduct(qtyTargetProduct);
         }
@@ -137,7 +154,7 @@ export const MobilePOSView: React.FC<MobilePOSViewProps> = ({ onOpenScanner }) =
       if (targetProduct.saleType === 'WEIGHT') {
         setWeightModalProduct(targetProduct);
       } else {
-        addProductToCart(targetProduct);
+        tryAddToCart(targetProduct);
       }
       setSearchTerm('');
       focusSearchInput();

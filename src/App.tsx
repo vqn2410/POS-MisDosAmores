@@ -157,9 +157,11 @@ const AppContent: React.FC = () => {
             // Restore cash session if open
             getDocs(query(collection(db, 'cash_sessions'), where('isOpen', '==', true)))
               .then((snapshot) => {
-                if (!snapshot.empty) {
-                  const docSnap = snapshot.docs[0];
-                  setCashSession({ id: docSnap.id, ...docSnap.data() } as any);
+                const openSessions = snapshot.docs
+                  .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as { id: string; openedAt?: string }))
+                  .sort((a, b) => (b.openedAt || '').localeCompare(a.openedAt || ''));
+                if (openSessions.length > 0) {
+                  setCashSession(openSessions[0] as any);
                 }
               })
               .catch(() => {});
@@ -178,7 +180,7 @@ const AppContent: React.FC = () => {
     });
 
     return () => unsubscribe();
-  }, [setUser, setLoading]);
+  }, [setUser, setLoading, setCashSession]);
 
   // Show login modal when not authenticated (after loading)
   React.useEffect(() => {

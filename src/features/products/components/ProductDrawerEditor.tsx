@@ -64,6 +64,10 @@ export const ProductDrawerEditor: React.FC<ProductDrawerEditorProps> = ({ produc
   const [formData, setFormData] = React.useState<Partial<Product>>({});
   const [formError, setFormError] = React.useState('');
   const duplicateCodeRef = React.useRef('');
+  const categoriesRef = React.useRef(categories);
+  categoriesRef.current = categories;
+  const suppliersRef = React.useRef(suppliers);
+  suppliersRef.current = suppliers;
 
   const isCurrentProductCode = (code: string) => {
     const normalizedCode = code.trim().toLowerCase();
@@ -92,8 +96,8 @@ export const ProductDrawerEditor: React.FC<ProductDrawerEditorProps> = ({ produc
         cashBoxType: 'KIOSK',
         isActive: true,
         imageUrl: '',
-        categoryId: categories[0]?.id || 'cat-01',
-        supplierId: suppliers[0]?.id || 'sup-01',
+        categoryId: categoriesRef.current[0]?.id || 'cat-01',
+        supplierId: suppliersRef.current[0]?.id || 'sup-01',
       });
     }
   }, [product, open]);

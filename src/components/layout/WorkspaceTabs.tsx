@@ -2,7 +2,7 @@ import React from 'react';
 import { Box, Tabs, Tab, IconButton, Tooltip, Menu, MenuItem, ListItemIcon, ListItemText } from '@mui/material';
 import { Close as CloseIcon, Add as AddIcon } from '@mui/icons-material';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
-import { ALL_SIDEBAR_ITEMS } from './Sidebar';
+import { ALL_SIDEBAR_ITEMS } from './sidebarItems';
 
 export const WorkspaceTabs: React.FC = () => {
   const { tabs, activeTabId, setActiveTab, closeTab, openTab } = useWorkspaceStore();

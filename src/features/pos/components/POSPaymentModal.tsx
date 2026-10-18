@@ -28,11 +28,12 @@ import {
   ShieldCheck,
   RefreshCw,
 } from 'lucide-react';
-import type { PaymentMethodType, Sale } from '../../../types';
+import type { FiscalInvoice, PaymentMethodType, Sale } from '../../../types';
 import { QRCodeSVG } from 'qrcode.react';
 import { usePOSStore } from '../store/usePOSStore';
+import { useAuthStore } from '../../../store/useAuthStore';
 import { useNotificationStore } from '../../../store/useNotificationStore';
-import { useCreateSale } from '../../../hooks/useSales';
+import { useCreateSale, useUpdateSale } from '../../../hooks/useSales';
 import { useRegisterBulkKardex } from '../../../hooks/useKardex';
 import { getNextTicketNumber } from '../../../services/ticketCounterService';
 import { CuentaDniPaymentProvider, type CuentaDniPaymentResult } from '../../payments/providers/CuentaDniPaymentProvider';
@@ -97,6 +98,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
     usePOSStore();
   const { addNotification } = useNotificationStore();
   const createSale = useCreateSale();
+  const updateSale = useUpdateSale();
   const registerBulkKardex = useRegisterBulkKardex();
 
   const [selectedMethod, setSelectedMethod] = React.useState<ExtendedPaymentMethod>('CASH');
@@ -104,12 +106,18 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
   const [cardType, setCardType] = React.useState<'DEBIT' | 'CREDIT'>('DEBIT');
   const [cdniPercent, setCdniPercent] = React.useState(5);
   const amountRef = React.useRef<HTMLInputElement>(null);
+  const focusAmountInput = () => {
+    window.setTimeout(() => {
+      amountRef.current?.focus();
+      amountRef.current?.select();
+    }, 50);
+  };
 
   // Anti doble clic: bloquea confirmación/agregado mientras se procesa el cierre.
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const submittingRef = React.useRef(false);
   const [completedSale, setCompletedSale] = React.useState<Sale | null>(null);
-  const finalizeAccreditedPaymentRef = React.useRef<(method: ExtendedPaymentMethod) => void>(() => undefined);
+  const finalizeAccreditedPaymentRef = React.useRef<() => void>(() => undefined);
   // Banner "PAGO ACREDITADO CON ÉXITO" + sonido al acreditarse un pago.
   const [accredited, setAccredited] = React.useState<{ label: string; amount: number } | null>(null);
   const accreditedTimerRef = React.useRef<number | null>(null);
@@ -133,10 +141,13 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
 
   // Cuenta DNI manual confirmation state
   const [cdniPayment, setCdniPayment] = React.useState<CuentaDniPaymentResult | null>(null);
+  const cdniRequestRef = React.useRef(0);
 
   // Point Smart order state
   const [pointStatus, setPointStatus] = React.useState<'IDLE' | 'CREATING' | 'WAITING' | 'APPROVED' | 'ERROR'>('IDLE');
   const [pointOrderId, setPointOrderId] = React.useState<string | null>(null);
+  const pointOrderIdRef = React.useRef<string | null>(null);
+  pointOrderIdRef.current = pointOrderId;
   const [pointDeviceName, setPointDeviceName] = React.useState<string | null>(null);
   const [pointError, setPointError] = React.useState('');
   const pointPendingRef = React.useRef(false);
@@ -159,6 +170,8 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
   const surchargeAmount = payments.reduce((acc, p) => acc + (p.surchargeAmount || 0), 0);
   const basePaid = payments.reduce((acc, p) => acc + (p.amount - (p.surchargeAmount || 0)), 0);
   const pendingBase = Math.max(0, grandTotal - basePaid);
+  const defaultCashAmountRef = React.useRef(pendingBase);
+  defaultCashAmountRef.current = pendingBase;
   const hasSurcharge = selectedMethod === 'CARD' || selectedMethod === 'MERCADOPAGO' || selectedMethod === 'CUENTA_DNI';
   const surchargePercent = selectedMethod === 'MERCADOPAGO' ? 5 : selectedMethod === 'CARD' ? (cardType === 'CREDIT' ? 10 : 5) : cdniPercent;
   const pendingSurcharge = hasSurcharge ? pendingBase * (surchargePercent / 100) : 0;
@@ -181,7 +194,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
     submittingRef.current = false;
     setIsSubmitting(false);
     if (isPaymentModalOpen) {
-      setPayAmount('');
+      setPayAmount(defaultCashAmountRef.current.toFixed(2));
       setSelectedMethod('CASH');
       setMpStatus('IDLE');
       setMpReference(null);
@@ -193,7 +206,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
       setPointError('');
       setCustomAmount('');
       setCustomAmountActive(false);
-      setTimeout(() => amountRef.current?.focus(), 50);
+      focusAmountInput();
     } else {
       if (mpPendingRef.current) {
         void cancelMercadoPagoQr().catch(() => undefined);
@@ -205,8 +218,8 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
       setMpReference(null);
       setMpQrData(null);
       setMpError('');
-      if (pointPendingRef.current && pointOrderId) {
-        void cancelMercadoPagoPointOrder(pointOrderId).catch(() => undefined);
+      if (pointPendingRef.current && pointOrderIdRef.current) {
+        void cancelMercadoPagoPointOrder(pointOrderIdRef.current).catch(() => undefined);
       }
       pointPendingRef.current = false;
       pointAddedRef.current = false;
@@ -265,7 +278,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
           setMpTxId(payment.paymentId);
           setMpStatus('APPROVED');
           addPayment({ method: 'QR', amount: mpAmount, reference: payment.paymentId, change: 0, surchargeAmount: mpCustomRef.current ? 0 : computeSurcharge(mpAmount, 5) });
-          finalizeAccreditedPaymentRef.current('MERCADOPAGO');
+          finalizeAccreditedPaymentRef.current();
           notifyAccredited('Mercado Pago', mpAmount);
           addNotification({ title: 'Mercado Pago aprobado', message: `Transacción confirmada: ${payment.paymentId}`, type: 'success' });
         } else if (payment.status === 'rejected' || payment.status === 'cancelled') {
@@ -297,7 +310,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
         setMpTxId(payment.paymentId);
         setMpStatus('APPROVED');
         addPayment({ method: 'QR', amount: mpAmount, reference: payment.paymentId, change: 0, surchargeAmount: mpCustomRef.current ? 0 : computeSurcharge(mpAmount, 5) });
-        finalizeAccreditedPaymentRef.current('MERCADOPAGO');
+        finalizeAccreditedPaymentRef.current();
         notifyAccredited('Mercado Pago', mpAmount);
         addNotification({ title: 'Mercado Pago aprobado', message: `Transacción confirmada: ${payment.paymentId}`, type: 'success' });
       } else if (payment.status === 'rejected' || payment.status === 'cancelled') {
@@ -321,7 +334,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
     setMpTxId('MANUAL');
     setMpStatus('APPROVED');
     addPayment({ method: 'QR', amount: mpAmount, reference: `MANUAL-${Date.now()}`, change: 0, surchargeAmount: mpCustomRef.current ? 0 : computeSurcharge(mpAmount, 5) });
-    finalizeAccreditedPaymentRef.current('MERCADOPAGO');
+    finalizeAccreditedPaymentRef.current();
     notifyAccredited('Mercado Pago', mpAmount);
     addNotification({ title: 'Pago validado manualmente', message: `Se asoció el pago manual de $${mpAmount.toFixed(2)} al ticket.`, type: 'success' });
     setManualValidateOpen(false);
@@ -401,7 +414,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
             setPointStatus('APPROVED');
             const reference = order.payment?.id ? `POINT-${order.payment.id}` : `POINT-${pointOrderId}`;
             addPayment({ method: 'CARD', amount: pointAmountRef.current, reference, change: 0, surchargeAmount: pointCustomRef.current ? 0 : pendingSurcharge });
-            finalizeAccreditedPaymentRef.current('CARD');
+            finalizeAccreditedPaymentRef.current();
             notifyAccredited('Tarjeta Point', pointAmountRef.current);
             addNotification({ title: 'Cobro con Point aprobado', message: `Transacción confirmada: ${reference}`, type: 'success' });
           }
@@ -446,13 +459,24 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
     if (method === 'MERCADOPAGO') {
       void createMercadoPagoQrOrder(amount);
     } else if (method === 'CUENTA_DNI') {
+      const requestId = ++cdniRequestRef.current;
       cdniProvider
         .createPayment({
           amount,
           externalReference: `TICK-${Date.now()}`,
         })
         .then((res) => {
-          setCdniPayment(res);
+          if (requestId === cdniRequestRef.current) setCdniPayment(res);
+        })
+        .catch((err) => {
+          console.error('Error creando pago Cuenta DNI:', err);
+          if (requestId === cdniRequestRef.current) {
+            addNotification({
+              title: 'Cuenta DNI no disponible',
+              message: err instanceof Error ? err.message : 'No se pudo iniciar el cobro con Cuenta DNI.',
+              type: 'error',
+            });
+          }
         });
     } else {
       if (mpPendingRef.current) {
@@ -460,11 +484,15 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
         mpPendingRef.current = false;
       }
       mpRequestRef.current += 1;
+      cdniRequestRef.current += 1;
       setMpStatus('IDLE');
       setMpReference(null);
       setMpQrData(null);
       setMpError('');
       setCdniPayment(null);
+    }
+    if (method !== 'MERCADOPAGO' && method !== 'CUENTA_DNI') {
+      focusAmountInput();
     }
   };
 
@@ -472,6 +500,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
     setCardType(type);
     if (selectedMethod === 'CARD') {
       setPayAmount((pendingBase * (1 + (type === 'CREDIT' ? 10 : 5) / 100)).toFixed(2));
+      focusAmountInput();
     }
   };
 
@@ -483,10 +512,11 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
     if (!cdniPayment) return;
 
     const referenceNumber = `MANUAL-${Date.now()}`;
+    const cashier = useAuthStore.getState().user;
     const confirmed = await cdniProvider.manuallyConfirmPayment(cdniPayment.id, {
       referenceNumber,
-      confirmedByUserId: usePOSStore.getState().customer.id || 'usr-unknown',
-      confirmedByUserName: usePOSStore.getState().customer.name || 'Usuario',
+      confirmedByUserId: cashier?.id || 'usr-unknown',
+      confirmedByUserName: cashier?.fullName || 'Usuario',
     });
 
     setCdniPayment(confirmed);
@@ -509,7 +539,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
 
   const handleAddPayment = () => {
     if (submittingRef.current) return;
-    const amt = parseFloat(payAmount);
+    const amt = Number(payAmount.replace(',', '.')) || 0;
     if (isNaN(amt) || amt <= 0) return;
 
     const cardRate = cardType === 'CREDIT' ? 10 : 5;
@@ -528,7 +558,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
     setPayAmount('');
   };
 
-  const handleConfirmCheckout = async (method: ExtendedPaymentMethod = selectedMethod) => {
+  const handleConfirmCheckout = async () => {
     if (submittingRef.current) return;
     const currentState = usePOSStore.getState();
     const currentTotals = calculateCartTotals(currentState.cart, currentState.discountGlobal);
@@ -536,76 +566,94 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
     const currentChange = currentState.payments.reduce((acc, payment) => acc + (payment.change || 0), 0);
     const currentSaleTotal = currentTotalPaid - currentChange;
     const currentSurcharge = currentSaleTotal - currentTotals.grandTotal;
+    // ARCA factura exactamente lo efectivamente cobrado por QR o tarjeta.
+    // Esto conserva el "otro monto" elegido por el cajero y cualquier recargo.
+    const fiscalAmount = currentState.payments
+      .filter((payment) => payment.method === 'QR' || payment.method === 'CARD')
+      .reduce((acc, payment) => acc + payment.amount, 0);
+    const internalAmount = Math.max(0, currentTotals.grandTotal + currentSurcharge - fiscalAmount);
     if (currentSaleTotal + 0.01 < currentTotals.grandTotal) return;
     submittingRef.current = true;
     setIsSubmitting(true);
+    let saleSaved = false;
+    let sale: Sale | null = null;
     try {
       const ticketNumber = await getNextTicketNumber();
-      const primaryMethod = method === 'MERCADOPAGO' ? 'MERCADOPAGO_QR' : method === 'CUENTA_DNI' ? 'CUENTA_DNI' : method;
+      sale = completeSale(ticketNumber, currentSurcharge);
+      if (!sale) return;
+      sale.fiscalAmount = fiscalAmount;
+      sale.internalAmount = internalAmount;
+      sale.notes = internalAmount > 0 ? `Ticket #${ticketNumber} · Importe interno: $${internalAmount.toFixed(2)}` : `Ticket #${ticketNumber}`;
 
-      let fiscalEvaluation = null;
-      let arcaError = null;
-      if (navigator.onLine) {
+      // Persistir la venta ANTES de emitir la factura ARCA para no dejar
+      // comprobantes fiscales huérfanos si falla el guardado.
+      const { id: _id, ...saleData } = sale;
+      const saleId = await createSale.mutateAsync(saleData as any);
+      sale.id = saleId;
+      saleSaved = true;
+
+      try {
+        await registerBulkKardex.mutateAsync({
+          items: sale.items,
+          type: 'OUT_SALE',
+          reference: `VENTA-${ticketNumber}`,
+          notes: 'Descuento de stock por venta',
+        });
+      } catch (err) {
+        console.error('Error descontando stock:', err);
+      }
+
+      let fiscalEmitted = false;
+      let arcaError: string | null = null;
+      if (navigator.onLine && fiscalAmount > 0) {
         try {
-          fiscalEvaluation = await FiscalRulesEngine.processFiscalEvaluation(primaryMethod, {
+          const fiscalEvaluation = await FiscalRulesEngine.processFiscalEvaluation('CARD', {
             concept: 1,
             docType: customer.taxId ? 80 : 99,
             docNumber: customer.taxId || '00000000',
             condicionIvaId: 5,
-            subtotal: currentSaleTotal,
+            subtotal: fiscalAmount,
             taxTotal: 0,
-            grandTotal: currentSaleTotal,
+            grandTotal: fiscalAmount,
+            items: [{ description: 'Productos varios', quantity: 1, unitPrice: fiscalAmount, taxRate: 0, subtotal: fiscalAmount }],
           });
+          if (fiscalEvaluation?.fiscalResult) {
+            const fr = fiscalEvaluation.fiscalResult;
+            const invoice: FiscalInvoice = {
+              cae: fr.cae,
+              caeExpiration: fr.caeExpiration,
+              voucherType: fr.voucherType,
+              voucherNumber: fr.voucherNumber,
+              salesPoint: fr.salesPoint,
+              emittedAt: new Date().toISOString(),
+              status: fr.result,
+              docType: customer.taxId ? 80 : 99,
+              docNumber: customer.taxId || '00000000',
+              observations: fr.observations,
+              amount: fiscalAmount,
+              description: 'Productos varios',
+            };
+            const notes = `Factura ARCA #${fr.voucherNumber} emitida por $${fiscalAmount.toFixed(2)} (Productos varios). CAE: ${fr.cae}`;
+            await updateSale.mutateAsync({ id: saleId, data: { fiscalInvoice: invoice, fiscalAmount, internalAmount, notes } });
+            sale.fiscalInvoice = invoice;
+            sale.notes = notes;
+            fiscalEmitted = true;
+          } else if (fiscalEvaluation?.internalReceiptNo) {
+            const notes = `Comprobante Interno: ${fiscalEvaluation.internalReceiptNo}`;
+            await updateSale.mutateAsync({ id: saleId, data: { notes } });
+            sale.notes = notes;
+          }
         } catch (err) {
           arcaError = err instanceof Error ? err.message : 'ARCA no pudo emitir la factura.';
         }
       }
-
-      const sale = completeSale(ticketNumber, currentSurcharge);
-      if (!sale) return;
-
-      if (fiscalEvaluation?.fiscalResult) {
-        const fr = fiscalEvaluation.fiscalResult;
-        sale.fiscalInvoice = {
-          cae: fr.cae,
-          caeExpiration: fr.caeExpiration,
-          voucherType: fr.voucherType,
-          voucherNumber: fr.voucherNumber,
-          salesPoint: fr.salesPoint,
-          emittedAt: new Date().toISOString(),
-          status: fr.result,
-          docType: customer.taxId ? 80 : 99,
-          docNumber: customer.taxId || '00000000',
-          observations: fr.observations,
-        };
-        sale.notes = `Factura ARCA #${fr.voucherNumber} emitida. CAE: ${fr.cae}`;
-      } else if (fiscalEvaluation?.internalReceiptNo) {
-        sale.notes = `Comprobante Interno: ${fiscalEvaluation.internalReceiptNo}`;
-      } else {
-        sale.notes = `Ticket #${ticketNumber}`;
-      }
-
-      const { id: _id, ...saleData } = sale;
-      createSale.mutate(saleData as any, {
-        onSuccess: () => {
-          registerBulkKardex.mutate({
-            items: sale.items,
-            type: 'OUT_SALE',
-            reference: `VENTA-${ticketNumber}`,
-            notes: 'Descuento de stock por venta',
-          });
-        },
-        onError: (err) => {
-          console.error('Error guardando venta en Firestore:', err);
-        },
-      });
 
       addNotification({
         title: arcaError ? 'Venta sin factura ARCA' : 'Venta Procesada Exitosamente',
         message: arcaError
           ? `Ticket ${sale.ticketNumber} guardado, pero ARCA no emitió factura: ${arcaError}`
           : navigator.onLine
-          ? `Ticket ${sale.ticketNumber} - ${fiscalEvaluation?.fiscalResult ? `Factura ARCA #${fiscalEvaluation.fiscalResult.voucherNumber} (CAE OK)` : 'Comprobante Interno Emitido'}`
+          ? `Ticket ${sale.ticketNumber} - ${fiscalEmitted ? `Factura ARCA #${sale.fiscalInvoice?.voucherNumber} (CAE OK)` : 'Comprobante Interno Emitido'}`
           : `Ticket ${sale.ticketNumber} guardado localmente. Se sincronizará al recuperar conexión.`,
         type: arcaError ? 'warning' : 'success',
       });
@@ -614,9 +662,11 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
     } catch (err) {
       console.error('Error al finalizar venta:', err);
       addNotification({
-        title: 'Error al finalizar',
-        message: 'Ocurrió un error al procesar la venta. Intente nuevamente.',
-        type: 'error',
+        title: saleSaved ? 'Venta guardada con advertencia' : 'Error al finalizar',
+        message: saleSaved
+          ? 'La venta se registró pero no se pudo completar un paso posterior. Verificá el inventario y la facturación.'
+          : 'No se pudo guardar la venta. Intente nuevamente.',
+        type: saleSaved ? 'warning' : 'error',
       });
     } finally {
       submittingRef.current = false;
@@ -624,8 +674,8 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
     }
   };
 
-  finalizeAccreditedPaymentRef.current = (method: ExtendedPaymentMethod) => {
-    window.setTimeout(() => void handleConfirmCheckout(method), 0);
+  finalizeAccreditedPaymentRef.current = () => {
+    window.setTimeout(() => void handleConfirmCheckout(), 0);
   };
 
   const chargeSettled =
@@ -681,20 +731,20 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
         )}
 
         <Grid container spacing={3}>
-          <Grid size={{ xs: 12, md: 7 }}>
+          <Grid size={{ xs: 12 }}>
             <Typography variant="subtitle1" sx={{ fontWeight: 900, mb: 1.5, fontSize: '1.1rem', color: '#0F172A' }}>
               Selecciona Medio de Pago Independiente:
             </Typography>
 
             <Grid container spacing={1.5} sx={{ mb: 3 }}>
               {/* 1. Efectivo */}
-              <Grid size={{ xs: 6, sm: 4 }}>
+              <Grid size={{ xs: 6, sm: 4, md: 2 }}>
                 <Paper
                   onClick={() => handleSelectMethod('CASH')}
                   elevation={selectedMethod === 'CASH' ? 2 : 0}
                   sx={{
-                    p: 2,
-                    minHeight: 105,
+                    p: 1,
+                    minHeight: 86,
                     borderRadius: 3,
                     cursor: 'pointer',
                     textAlign: 'center',
@@ -707,19 +757,19 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
                     justifyContent: 'center',
                   }}
                 >
-                  <Banknote size={32} color="#16A34A" style={{ marginBottom: 4 }} />
+                  <Banknote size={24} color="#16A34A" style={{ marginBottom: 2 }} />
                   <Typography variant="subtitle2" sx={{ fontWeight: 800, color: '#0F172A' }}>Efectivo</Typography>
                 </Paper>
               </Grid>
 
               {/* 2. Tarjeta */}
-              <Grid size={{ xs: 6, sm: 4 }}>
+              <Grid size={{ xs: 6, sm: 4, md: 2 }}>
                 <Paper
                   onClick={() => handleSelectMethod('CARD')}
                   elevation={selectedMethod === 'CARD' ? 2 : 0}
                   sx={{
-                    p: 2,
-                    minHeight: 105,
+                    p: 1,
+                    minHeight: 86,
                     borderRadius: 3,
                     cursor: 'pointer',
                     textAlign: 'center',
@@ -732,19 +782,19 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
                     justifyContent: 'center',
                   }}
                 >
-                  <CreditCard size={32} color="#2563EB" style={{ marginBottom: 4 }} />
+                  <CreditCard size={24} color="#2563EB" style={{ marginBottom: 2 }} />
                   <Typography variant="subtitle2" sx={{ fontWeight: 800, color: '#0F172A' }}>Tarjeta</Typography>
                 </Paper>
               </Grid>
 
               {/* 3. Transferencia */}
-              <Grid size={{ xs: 6, sm: 4 }}>
+              <Grid size={{ xs: 6, sm: 4, md: 2 }}>
                 <Paper
                   onClick={() => handleSelectMethod('TRANSFER')}
                   elevation={selectedMethod === 'TRANSFER' ? 2 : 0}
                   sx={{
-                    p: 2,
-                    minHeight: 105,
+                    p: 1,
+                    minHeight: 86,
                     borderRadius: 3,
                     cursor: 'pointer',
                     textAlign: 'center',
@@ -757,19 +807,19 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
                     justifyContent: 'center',
                   }}
                 >
-                  <ArrowRightLeft size={32} color="#0284C7" style={{ marginBottom: 4 }} />
+                  <ArrowRightLeft size={24} color="#0284C7" style={{ marginBottom: 2 }} />
                   <Typography variant="subtitle2" sx={{ fontWeight: 800, color: '#0F172A' }}>Transferencia</Typography>
                 </Paper>
               </Grid>
 
               {/* 4. Mercado Pago (Independiente con Logo) */}
-              <Grid size={{ xs: 6, sm: 4 }}>
+              <Grid size={{ xs: 6, sm: 4, md: 2 }}>
                 <Paper
                   onClick={() => handleSelectMethod('MERCADOPAGO')}
                   elevation={selectedMethod === 'MERCADOPAGO' ? 2 : 0}
                   sx={{
-                    p: 1.5,
-                    minHeight: 105,
+                    p: 1,
+                    minHeight: 86,
                     borderRadius: 3,
                     cursor: 'pointer',
                     textAlign: 'center',
@@ -782,20 +832,20 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
                     justifyContent: 'center',
                   }}
                 >
-                  <MercadoPagoLogo height={32} />
+                  <MercadoPagoLogo height={24} />
                   <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#009EE3', mt: 0.5 }}>Mercado Pago</Typography>
                   <Typography variant="caption" sx={{ color: '#64748B', fontWeight: 700 }}>Pagar con QR</Typography>
                 </Paper>
               </Grid>
 
               {/* 5. Cuenta DNI (Independiente con Logo) */}
-              <Grid size={{ xs: 6, sm: 4 }}>
+              <Grid size={{ xs: 6, sm: 4, md: 2 }}>
                 <Paper
                   onClick={() => handleSelectMethod('CUENTA_DNI')}
                   elevation={selectedMethod === 'CUENTA_DNI' ? 2 : 0}
                   sx={{
-                    p: 1.5,
-                    minHeight: 105,
+                    p: 1,
+                    minHeight: 86,
                     borderRadius: 3,
                     cursor: 'pointer',
                     textAlign: 'center',
@@ -808,20 +858,20 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
                     justifyContent: 'center',
                   }}
                 >
-                  <CuentaDniLogo height={32} />
+                  <CuentaDniLogo height={24} />
                   <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#008037', mt: 0.5 }}>Cuenta DNI</Typography>
                   <Typography variant="caption" sx={{ color: '#64748B', fontWeight: 700 }}>Pagar con QR</Typography>
                 </Paper>
               </Grid>
 
               {/* 6. Crédito Cliente */}
-              <Grid size={{ xs: 6, sm: 4 }}>
+              <Grid size={{ xs: 6, sm: 4, md: 2 }}>
                 <Paper
                   onClick={() => handleSelectMethod('CREDIT')}
                   elevation={selectedMethod === 'CREDIT' ? 2 : 0}
                   sx={{
-                    p: 2,
-                    minHeight: 105,
+                    p: 1,
+                    minHeight: 86,
                     borderRadius: 3,
                     cursor: 'pointer',
                     textAlign: 'center',
@@ -834,7 +884,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
                     justifyContent: 'center',
                   }}
                 >
-                  <UserCheck size={32} color="#D97706" style={{ marginBottom: 4 }} />
+                  <UserCheck size={24} color="#D97706" style={{ marginBottom: 2 }} />
                   <Typography variant="subtitle2" sx={{ fontWeight: 800, color: '#0F172A' }}>Crédito Cliente</Typography>
                 </Paper>
               </Grid>
@@ -1156,10 +1206,12 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
                   inputRef={amountRef}
                   fullWidth
                   label="Monto a abonar"
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   value={payAmount}
                   disabled={isSubmitting}
-                  onChange={(e) => setPayAmount(e.target.value)}
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) => setPayAmount(e.target.value.replace(/[^0-9.,]/g, ''))}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !isSubmitting) {
                       e.preventDefault();
@@ -1191,9 +1243,9 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
           </Grid>
 
           {/* Mixed Payment Split Summary Column */}
-          <Grid size={{ xs: 12, md: 5 }}>
-            <Paper elevation={0} sx={{ p: 2.5, borderRadius: 4, bgcolor: '#F8FAFC', border: '2px solid #E2E8F0' }}>
-              <Typography variant="subtitle1" sx={{ fontWeight: 900, mb: 1, fontSize: '1.1rem', color: '#0F172A' }}>
+          <Grid size={{ xs: 12 }}>
+            <Paper elevation={0} sx={{ p: 3.5, borderRadius: 4, bgcolor: '#F8FAFC', border: '2px solid #E2E8F0' }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 900, mb: 1, fontSize: '1.4rem', color: '#0F172A' }}>
                 Desglose de Pago Mixto
               </Typography>
               <Divider sx={{ mb: 2, borderColor: '#E2E8F0' }} />
@@ -1205,10 +1257,10 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
               ) : (
                 payments.map((p) => (
                   <Box key={p.id} sx={{ display: 'flex', justifyContent: 'space-between', mb: 1.5 }}>
-                    <Typography variant="body1" sx={{ fontWeight: 700, color: '#0F172A' }}>
+                    <Typography variant="body1" sx={{ fontWeight: 700, color: '#0F172A', fontSize: '1.2rem' }}>
                       {p.method} {p.reference ? `(${p.reference})` : ''}
                     </Typography>
-                    <Typography variant="body1" sx={{ fontWeight: 900, color: '#2563EB' }}>
+                    <Typography variant="body1" sx={{ fontWeight: 900, color: '#2563EB', fontSize: '1.2rem' }}>
                       ${p.amount.toFixed(2)}
                     </Typography>
                   </Box>
@@ -1218,22 +1270,22 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
               <Divider sx={{ my: 2, borderColor: '#E2E8F0' }} />
 
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                <Typography variant="body1" sx={{ fontWeight: 600, color: '#475569' }}>Total de Venta:</Typography>
-                <Typography variant="body1" sx={{ fontWeight: 900, color: '#0F172A' }}>
+                <Typography variant="body1" sx={{ fontWeight: 600, color: '#475569', fontSize: '1.25rem' }}>Total de Venta:</Typography>
+                <Typography variant="body1" sx={{ fontWeight: 900, color: '#0F172A', fontSize: '1.25rem' }}>
                   ${checkoutTotal.toFixed(2)}
                 </Typography>
               </Box>
 
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                <Typography variant="body1" sx={{ fontWeight: 600, color: '#475569' }}>Monto Asignado:</Typography>
-                <Typography variant="body1" sx={{ fontWeight: 900, color: '#16A34A' }}>
+                <Typography variant="body1" sx={{ fontWeight: 600, color: '#475569', fontSize: '1.25rem' }}>Monto Asignado:</Typography>
+                <Typography variant="body1" sx={{ fontWeight: 900, color: '#16A34A', fontSize: '1.25rem' }}>
                   ${totalPaid.toFixed(2)}
                 </Typography>
               </Box>
 
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                <Typography variant="body1" sx={{ fontWeight: 600, color: '#475569' }}>Saldo Pendiente:</Typography>
-                <Typography variant="body1" sx={{ fontWeight: 900, color: checkoutTotal > totalPaid ? '#DC2626' : '#0F172A' }}>
+                <Typography variant="body1" sx={{ fontWeight: 600, color: '#475569', fontSize: '1.25rem' }}>Saldo Pendiente:</Typography>
+                <Typography variant="body1" sx={{ fontWeight: 900, color: checkoutTotal > totalPaid ? '#DC2626' : '#0F172A', fontSize: '1.25rem' }}>
                   ${Math.max(0, checkoutTotal - totalPaid).toFixed(2)}
                 </Typography>
               </Box>
@@ -1290,7 +1342,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
       </DialogActions>
     </Dialog>
 
-    <Dialog open={Boolean(completedSale)} maxWidth="xs" fullWidth>
+    <Dialog open={Boolean(completedSale)} onClose={() => setCompletedSale(null)} maxWidth="xs" fullWidth>
       <DialogTitle sx={{ fontWeight: 900, textAlign: 'center', color: '#15803D' }}>Venta finalizada</DialogTitle>
       <DialogContent>
         <Typography sx={{ textAlign: 'center', fontWeight: 700, color: '#334155' }}>
