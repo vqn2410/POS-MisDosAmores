@@ -16,6 +16,7 @@ import {
   Alert,
   CircularProgress,
   MenuItem,
+  LinearProgress,
 } from '@mui/material';
 import {
   Banknote,
@@ -25,6 +26,7 @@ import {
   Printer,
   Clock,
   CheckCheck,
+  CheckCircle,
   ShieldCheck,
   RefreshCw,
 } from 'lucide-react';
@@ -117,6 +119,31 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const submittingRef = React.useRef(false);
   const [completedSale, setCompletedSale] = React.useState<Sale | null>(null);
+  const [completedCountdown, setCompletedCountdown] = React.useState(20);
+
+  // Cuenta regresiva de 20 segundos para la ventana de confirmación de pago / impresión
+  React.useEffect(() => {
+    if (!completedSale) {
+      setCompletedCountdown(20);
+      return;
+    }
+
+    setCompletedCountdown(20);
+    const interval = window.setInterval(() => {
+      setCompletedCountdown((prev) => {
+        if (prev <= 1) {
+          window.clearInterval(interval);
+          setCompletedSale(null);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [completedSale]);
   const finalizeAccreditedPaymentRef = React.useRef<() => void>(() => undefined);
   // Banner "PAGO ACREDITADO CON ÉXITO" + sonido al acreditarse un pago.
   const [accredited, setAccredited] = React.useState<{ label: string; amount: number } | null>(null);
@@ -603,62 +630,75 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
         console.error('Error descontando stock:', err);
       }
 
-      let fiscalEmitted = false;
-      let arcaError: string | null = null;
-      if (navigator.onLine && fiscalAmount > 0) {
-        try {
-          const fiscalEvaluation = await FiscalRulesEngine.processFiscalEvaluation('CARD', {
-            concept: 1,
-            docType: customer.taxId ? 80 : 99,
-            docNumber: customer.taxId || '00000000',
-            condicionIvaId: 5,
-            subtotal: fiscalAmount,
-            taxTotal: 0,
-            grandTotal: fiscalAmount,
-            items: [{ description: 'Productos varios', quantity: 1, unitPrice: fiscalAmount, taxRate: 0, subtotal: fiscalAmount }],
-          });
-          if (fiscalEvaluation?.fiscalResult) {
-            const fr = fiscalEvaluation.fiscalResult;
-            const invoice: FiscalInvoice = {
-              cae: fr.cae,
-              caeExpiration: fr.caeExpiration,
-              voucherType: fr.voucherType,
-              voucherNumber: fr.voucherNumber,
-              salesPoint: fr.salesPoint,
-              emittedAt: new Date().toISOString(),
-              status: fr.result,
-              docType: customer.taxId ? 80 : 99,
-              docNumber: customer.taxId || '00000000',
-              observations: fr.observations,
-              amount: fiscalAmount,
-              description: 'Productos varios',
-            };
-            const notes = `Factura ARCA #${fr.voucherNumber} emitida por $${fiscalAmount.toFixed(2)} (Productos varios). CAE: ${fr.cae}`;
-            await updateSale.mutateAsync({ id: saleId, data: { fiscalInvoice: invoice, fiscalAmount, internalAmount, notes } });
-            sale.fiscalInvoice = invoice;
-            sale.notes = notes;
-            fiscalEmitted = true;
-          } else if (fiscalEvaluation?.internalReceiptNo) {
-            const notes = `Comprobante Interno: ${fiscalEvaluation.internalReceiptNo}`;
-            await updateSale.mutateAsync({ id: saleId, data: { notes } });
-            sale.notes = notes;
-          }
-        } catch (err) {
-          arcaError = err instanceof Error ? err.message : 'ARCA no pudo emitir la factura.';
-        }
-      }
+      const finalSale = sale;
+
+      // ── Mostrar ventana de confirmación INMEDIATAMENTE ──
+      // Se abre de inmediato con la cuenta regresiva de 20s para imprimir o cerrar sin demoras
+      setCompletedSale(finalSale);
 
       addNotification({
-        title: arcaError ? 'Venta sin factura ARCA' : 'Venta Procesada Exitosamente',
-        message: arcaError
-          ? `Ticket ${sale.ticketNumber} guardado, pero ARCA no emitió factura: ${arcaError}`
-          : navigator.onLine
-          ? `Ticket ${sale.ticketNumber} - ${fiscalEmitted ? `Factura ARCA #${sale.fiscalInvoice?.voucherNumber} (CAE OK)` : 'Comprobante Interno Emitido'}`
-          : `Ticket ${sale.ticketNumber} guardado localmente. Se sincronizará al recuperar conexión.`,
-        type: arcaError ? 'warning' : 'success',
+        title: 'Venta Procesada Exitosamente',
+        message: `Ticket ${finalSale.ticketNumber} registrado correctamente.`,
+        type: 'success',
       });
 
-      setCompletedSale(sale);
+      // Si corresponde facturación ARCA (tarjeta / QR), se procesa en segundo plano
+      // para no bloquear la interfaz ni hacer esperar 20 segundos al cajero.
+      if (navigator.onLine && fiscalAmount > 0) {
+        FiscalRulesEngine.processFiscalEvaluation('CARD', {
+          concept: 1,
+          docType: customer.taxId ? 80 : 99,
+          docNumber: customer.taxId || '00000000',
+          condicionIvaId: 5,
+          subtotal: fiscalAmount,
+          taxTotal: 0,
+          grandTotal: fiscalAmount,
+          items: [{ description: 'Productos varios', quantity: 1, unitPrice: fiscalAmount, taxRate: 0, subtotal: fiscalAmount }],
+        })
+          .then(async (fiscalEvaluation) => {
+            if (fiscalEvaluation?.fiscalResult) {
+              const fr = fiscalEvaluation.fiscalResult;
+              const invoice: FiscalInvoice = {
+                cae: fr.cae,
+                caeExpiration: fr.caeExpiration,
+                voucherType: fr.voucherType,
+                voucherNumber: fr.voucherNumber,
+                salesPoint: fr.salesPoint,
+                emittedAt: new Date().toISOString(),
+                status: fr.result,
+                docType: customer.taxId ? 80 : 99,
+                docNumber: customer.taxId || '00000000',
+                observations: fr.observations,
+                amount: fiscalAmount,
+                description: 'Productos varios',
+              };
+              const notes = `Factura ARCA #${fr.voucherNumber} emitida por $${fiscalAmount.toFixed(2)} (Productos varios). CAE: ${fr.cae}`;
+              await updateSale.mutateAsync({ id: saleId, data: { fiscalInvoice: invoice, fiscalAmount, internalAmount, notes } });
+              finalSale.fiscalInvoice = invoice;
+              finalSale.notes = notes;
+              setCompletedSale((prev) => (prev && prev.id === saleId ? { ...prev, fiscalInvoice: invoice, notes } : prev));
+              addNotification({
+                title: 'Factura ARCA Emitida',
+                message: `Ticket #${finalSale.ticketNumber} facturado con éxito. CAE: ${fr.cae}`,
+                type: 'success',
+              });
+            } else if (fiscalEvaluation?.internalReceiptNo) {
+              const notes = `Comprobante Interno: ${fiscalEvaluation.internalReceiptNo}`;
+              await updateSale.mutateAsync({ id: saleId, data: { notes } });
+              finalSale.notes = notes;
+              setCompletedSale((prev) => (prev && prev.id === saleId ? { ...prev, notes } : prev));
+            }
+          })
+          .catch((err) => {
+            const arcaError = err instanceof Error ? err.message : 'ARCA no pudo emitir la factura.';
+            console.warn('ARCA background fiscalization error:', err);
+            addNotification({
+              title: 'Venta sin factura ARCA',
+              message: `Ticket ${finalSale.ticketNumber}: ARCA no emitió factura (${arcaError}).`,
+              type: 'warning',
+            });
+          });
+      }
     } catch (err) {
       console.error('Error al finalizar venta:', err);
       addNotification({
@@ -1342,17 +1382,93 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
       </DialogActions>
     </Dialog>
 
-    <Dialog open={Boolean(completedSale)} onClose={() => setCompletedSale(null)} maxWidth="xs" fullWidth>
-      <DialogTitle sx={{ fontWeight: 900, textAlign: 'center', color: '#15803D' }}>Venta finalizada</DialogTitle>
-      <DialogContent>
-        <Typography sx={{ textAlign: 'center', fontWeight: 700, color: '#334155' }}>
+    <Dialog
+      open={Boolean(completedSale)}
+      onClose={() => setCompletedSale(null)}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          setCompletedSale(null);
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          if (!completedSale) return;
+          const sale = completedSale;
+          setCompletedSale(null);
+          onPrintTicket(sale);
+        }
+      }}
+      maxWidth="xs"
+      fullWidth
+      slotProps={{
+        paper: {
+          sx: {
+            borderRadius: 4,
+            p: 1,
+            position: 'relative',
+            overflow: 'hidden',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+          },
+        },
+      }}
+    >
+      <LinearProgress
+        variant="determinate"
+        value={(completedCountdown / 20) * 100}
+        sx={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          height: 6,
+          bgcolor: '#E2E8F0',
+          '& .MuiLinearProgress-bar': {
+            bgcolor: '#16A34A',
+            transition: 'transform 1s linear',
+          },
+        }}
+      />
+      <DialogTitle sx={{ fontWeight: 900, textAlign: 'center', color: '#15803D', pt: 3, pb: 1, fontSize: '1.4rem' }}>
+        <CheckCircle size={44} color="#16A34A" style={{ margin: '0 auto 8px', display: 'block' }} />
+        ¡Venta Finalizada con Éxito!
+      </DialogTitle>
+      <DialogContent sx={{ textAlign: 'center', pb: 1 }}>
+        <Typography sx={{ fontWeight: 800, color: '#0F172A', fontSize: '1.15rem', mb: 0.5 }}>
+          Ticket #{completedSale?.ticketNumber}
+        </Typography>
+        <Typography sx={{ fontWeight: 600, color: '#475569', fontSize: '0.95rem', mb: 2 }}>
           El pago fue acreditado y la venta se registró correctamente.
         </Typography>
+        <Box
+          sx={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 1,
+            px: 2,
+            py: 0.75,
+            borderRadius: 3,
+            bgcolor: '#F0FDF4',
+            border: '1px solid #BBF7D0',
+            color: '#166534',
+            fontSize: '0.875rem',
+            fontWeight: 700,
+          }}
+        >
+          <Clock size={16} />
+          Esta ventana se cerrará en {completedCountdown}s
+        </Box>
       </DialogContent>
-      <DialogActions sx={{ p: 2.5, justifyContent: 'center', gap: 1 }}>
-        <Button variant="outlined" onClick={() => setCompletedSale(null)} sx={{ fontWeight: 800 }}>Cerrar</Button>
+      <DialogActions sx={{ p: 2.5, pt: 1, justifyContent: 'space-between', gap: 1.5 }}>
+        <Button
+          variant="outlined"
+          onClick={() => setCompletedSale(null)}
+          sx={{ fontWeight: 800, borderRadius: 3, minHeight: 46, px: 2.5 }}
+        >
+          Cerrar ({completedCountdown}s)
+        </Button>
         <Button
           variant="contained"
+          color="primary"
+          autoFocus
           startIcon={<Printer size={18} />}
           onClick={() => {
             if (!completedSale) return;
@@ -1360,9 +1476,9 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
             setCompletedSale(null);
             onPrintTicket(sale);
           }}
-          sx={{ fontWeight: 900 }}
+          sx={{ fontWeight: 900, borderRadius: 3, minHeight: 46, px: 3 }}
         >
-          Imprimir ticket
+          Imprimir ticket (Enter)
         </Button>
       </DialogActions>
     </Dialog>

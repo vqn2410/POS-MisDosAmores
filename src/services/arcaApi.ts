@@ -25,11 +25,25 @@ export interface ArcaStatus extends ArcaConfig {
   ta: ArcaTaInfo;
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${ARCA_BASE}${path}`, init);
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.message || 'Error en el servicio ARCA.');
-  return data;
+async function request<T>(path: string, init?: RequestInit, timeoutMs = 12000): Promise<T> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(`${ARCA_BASE}${path}`, {
+      ...init,
+      signal: init?.signal || controller.signal,
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Error en el servicio ARCA.');
+    return data;
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error('Tiempo de espera agotado con el servicio ARCA.');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 export const getArcaConfig = () => request<ArcaConfig>('/config');
