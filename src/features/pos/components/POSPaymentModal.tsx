@@ -629,7 +629,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
     }
   };
 
-  const handleConfirmCheckout = async () => {
+  const handleConfirmCheckout = () => {
     if (submittingRef.current) return;
     const currentState = usePOSStore.getState();
     const currentTotals = calculateCartTotals(currentState.cart, currentState.discountGlobal);
@@ -646,143 +646,145 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
     if (currentSaleTotal + 0.01 < currentTotals.grandTotal) return;
     submittingRef.current = true;
     setIsSubmitting(true);
-    let saleSaved = false;
-    let sale: Sale | null = null;
-    try {
-      const ticketNumber = await getNextTicketNumber();
-      sale = completeSale(ticketNumber, currentSurcharge);
-      if (!sale) return;
-      sale.fiscalAmount = fiscalAmount;
-      sale.internalAmount = internalAmount;
-      sale.notes = internalAmount > 0 ? `Ticket #${ticketNumber} · Importe interno: $${internalAmount.toFixed(2)}` : `Ticket #${ticketNumber}`;
 
-      // Persistir la venta ANTES de emitir la factura ARCA para no dejar
-      // comprobantes fiscales huérfanos si falla el guardado.
-      const { id: _id, ...saleData } = sale;
-      const saleId = await createSale.mutateAsync(saleData as any);
-      sale.id = saleId;
-      saleSaved = true;
+    const ticketNumber = getNextTicketNumber();
+    const sale = completeSale(ticketNumber, currentSurcharge);
+    if (!sale) {
+      submittingRef.current = false;
+      setIsSubmitting(false);
+      return;
+    }
 
+    sale.fiscalAmount = fiscalAmount;
+    sale.internalAmount = internalAmount;
+    sale.notes = internalAmount > 0 ? `Ticket #${ticketNumber} · Importe interno: $${internalAmount.toFixed(2)}` : `Ticket #${ticketNumber}`;
+
+    // Determinamos si corresponde facturación electrónica en ARCA (Mercado Pago, Cuenta DNI, Tarjeta)
+    const isFiscalMethod = Boolean(navigator.onLine && fiscalAmount > 0);
+
+    // Si es fiscal, iniciamos en estado de espera y bloqueamos el botón de imprimir con timeout de 12s
+    if (isFiscalMethod) {
+      setIsAwaitingArca(true);
+      setArcaTimeoutSeconds(12);
+      setArcaStatusMessage(null);
+    } else {
+      setIsAwaitingArca(false);
+      setArcaStatusMessage(null);
+    }
+
+    // ── Mostrar ventana de confirmación INMEDIATAMENTE (0 retardo) ──
+    // Se abre de inmediato con la cuenta regresiva de 20s para imprimir o cerrar sin demoras
+    setCompletedSale(sale);
+    submittingRef.current = false;
+    setIsSubmitting(false);
+
+    addNotification({
+      title: 'Venta Procesada Exitosamente',
+      message: `Ticket ${sale.ticketNumber} registrado correctamente.`,
+      type: 'success',
+    });
+
+    // Guardado y sincronización en SEGUNDO PLANO (Firestore + Kardex + ARCA)
+    (async () => {
+      let saleId = '';
       try {
-        await registerBulkKardex.mutateAsync({
+        const { id: _id, ...saleData } = sale;
+        saleId = await createSale.mutateAsync(saleData as any);
+        sale.id = saleId;
+
+        // Descontar inventario en segundo plano sin demorar la interfaz
+        registerBulkKardex.mutateAsync({
           items: sale.items,
           type: 'OUT_SALE',
           reference: `VENTA-${ticketNumber}`,
           notes: 'Descuento de stock por venta',
+        }).catch((err) => {
+          console.error('Error descontando stock en segundo plano:', err);
         });
-      } catch (err) {
-        console.error('Error descontando stock:', err);
-      }
 
-      const finalSale = sale;
-
-      // Determinamos si corresponde facturación electrónica en ARCA (Mercado Pago, Cuenta DNI, Tarjeta)
-      const isFiscalMethod = Boolean(navigator.onLine && fiscalAmount > 0);
-
-      // Si es fiscal, iniciamos en estado de espera y bloqueamos el botón de imprimir con timeout de 12s
-      if (isFiscalMethod) {
-        setIsAwaitingArca(true);
-        setArcaTimeoutSeconds(12);
-        setArcaStatusMessage(null);
-      } else {
-        setIsAwaitingArca(false);
-        setArcaStatusMessage(null);
-      }
-
-      // ── Mostrar ventana de confirmación INMEDIATAMENTE ──
-      // Se abre de inmediato con la cuenta regresiva de 20s para imprimir o cerrar sin demoras
-      setCompletedSale(finalSale);
-
-      addNotification({
-        title: 'Venta Procesada Exitosamente',
-        message: `Ticket ${finalSale.ticketNumber} registrado correctamente.`,
-        type: 'success',
-      });
-
-      // Si corresponde facturación ARCA (tarjeta / QR), se procesa en segundo plano
-      // con bloqueo del botón de imprimir hasta que confirme o se venza el timeout de 12s
-      if (isFiscalMethod) {
-        FiscalRulesEngine.processFiscalEvaluation('CARD', {
-          concept: 1,
-          docType: customer.taxId ? 80 : 99,
-          docNumber: customer.taxId || '00000000',
-          condicionIvaId: 5,
-          subtotal: fiscalAmount,
-          taxTotal: 0,
-          grandTotal: fiscalAmount,
-          items: [{ description: 'Productos varios', quantity: 1, unitPrice: fiscalAmount, taxRate: 0, subtotal: fiscalAmount }],
-        })
-          .then(async (fiscalEvaluation) => {
-            if (fiscalEvaluation?.fiscalResult) {
-              const fr = fiscalEvaluation.fiscalResult;
-              const invoice: FiscalInvoice = {
-                cae: fr.cae,
-                caeExpiration: fr.caeExpiration,
-                voucherType: fr.voucherType,
-                voucherNumber: fr.voucherNumber,
-                salesPoint: fr.salesPoint,
-                emittedAt: new Date().toISOString(),
-                status: fr.result,
-                docType: customer.taxId ? 80 : 99,
-                docNumber: customer.taxId || '00000000',
-                observations: fr.observations,
-                amount: fiscalAmount,
-                description: 'Productos varios',
-              };
-              const notes = `Factura ARCA #${fr.voucherNumber} emitida por $${fiscalAmount.toFixed(2)} (Productos varios). CAE: ${fr.cae}`;
-              await updateSale.mutateAsync({ id: saleId, data: { fiscalInvoice: invoice, fiscalAmount, internalAmount, notes } });
-              finalSale.fiscalInvoice = invoice;
-              finalSale.notes = notes;
-              setCompletedSale((prev) => (prev && prev.id === saleId ? { ...prev, fiscalInvoice: invoice, notes } : prev));
-              
-              // Factura confirmada: recién ahí habilita la impresión
-              setIsAwaitingArca(false);
-              setArcaStatusMessage(`Factura ARCA confirmada · CAE ${fr.cae}`);
-              setCompletedCountdown((c) => Math.max(c, 10));
-
-              addNotification({
-                title: 'Factura ARCA Emitida',
-                message: `Ticket #${finalSale.ticketNumber} facturado con éxito. CAE: ${fr.cae}`,
-                type: 'success',
-              });
-            } else if (fiscalEvaluation?.internalReceiptNo) {
-              const notes = `Comprobante Interno: ${fiscalEvaluation.internalReceiptNo}`;
-              await updateSale.mutateAsync({ id: saleId, data: { notes } });
-              finalSale.notes = notes;
-              setCompletedSale((prev) => (prev && prev.id === saleId ? { ...prev, notes } : prev));
-              setIsAwaitingArca(false);
-            }
+        // Facturación ARCA en segundo plano si corresponde
+        if (isFiscalMethod) {
+          FiscalRulesEngine.processFiscalEvaluation('CARD', {
+            concept: 1,
+            docType: customer.taxId ? 80 : 99,
+            docNumber: customer.taxId || '00000000',
+            condicionIvaId: 5,
+            subtotal: fiscalAmount,
+            taxTotal: 0,
+            grandTotal: fiscalAmount,
+            items: [{ description: 'Productos varios', quantity: 1, unitPrice: fiscalAmount, taxRate: 0, subtotal: fiscalAmount }],
           })
-          .catch((err) => {
-            const arcaError = err instanceof Error ? err.message : 'ARCA no pudo emitir la factura.';
-            console.warn('ARCA background fiscalization error:', err);
-            // Si falló ARCA o expiró red, desbloqueamos para permitir imprimir comprobante interno
-            setIsAwaitingArca(false);
-            setArcaStatusMessage(`ARCA no autorizó: ${arcaError}`);
-            addNotification({
-              title: 'Venta sin factura ARCA',
-              message: `Ticket ${finalSale.ticketNumber}: ARCA no emitió factura (${arcaError}).`,
-              type: 'warning',
+            .then(async (fiscalEvaluation) => {
+              if (fiscalEvaluation?.fiscalResult) {
+                const fr = fiscalEvaluation.fiscalResult;
+                const invoice: FiscalInvoice = {
+                  cae: fr.cae,
+                  caeExpiration: fr.caeExpiration,
+                  voucherType: fr.voucherType,
+                  voucherNumber: fr.voucherNumber,
+                  salesPoint: fr.salesPoint,
+                  emittedAt: new Date().toISOString(),
+                  status: fr.result,
+                  docType: customer.taxId ? 80 : 99,
+                  docNumber: customer.taxId || '00000000',
+                  observations: fr.observations,
+                  amount: fiscalAmount,
+                  description: 'Productos varios',
+                };
+                const notes = `Factura ARCA #${fr.voucherNumber} emitida por $${fiscalAmount.toFixed(2)} (Productos varios). CAE: ${fr.cae}`;
+                if (saleId) {
+                  await updateSale.mutateAsync({ id: saleId, data: { fiscalInvoice: invoice, fiscalAmount, internalAmount, notes } });
+                }
+                sale.fiscalInvoice = invoice;
+                sale.notes = notes;
+                setCompletedSale((prev) => (prev ? { ...prev, fiscalInvoice: invoice, notes } : prev));
+
+                // Factura confirmada: recién ahí habilita la impresión
+                setIsAwaitingArca(false);
+                setArcaStatusMessage(`Factura ARCA confirmada · CAE ${fr.cae}`);
+                setCompletedCountdown((c) => Math.max(c, 10));
+
+                addNotification({
+                  title: 'Factura ARCA Emitida',
+                  message: `Ticket #${sale.ticketNumber} facturado con éxito. CAE: ${fr.cae}`,
+                  type: 'success',
+                });
+              } else if (fiscalEvaluation?.internalReceiptNo) {
+                const notes = `Comprobante Interno: ${fiscalEvaluation.internalReceiptNo}`;
+                if (saleId) {
+                  await updateSale.mutateAsync({ id: saleId, data: { notes } });
+                }
+                sale.notes = notes;
+                setCompletedSale((prev) => (prev ? { ...prev, notes } : prev));
+                setIsAwaitingArca(false);
+              }
+            })
+            .catch((err) => {
+              const arcaError = err instanceof Error ? err.message : 'ARCA no pudo emitir la factura.';
+              console.warn('ARCA background fiscalization error:', err);
+              // Si falló ARCA o expiró red, desbloqueamos para permitir imprimir comprobante interno
+              setIsAwaitingArca(false);
+              setArcaStatusMessage(`ARCA no autorizó: ${arcaError}`);
+              addNotification({
+                title: 'Venta sin factura ARCA',
+                message: `Ticket ${sale.ticketNumber}: ARCA no emitió factura (${arcaError}).`,
+                type: 'warning',
+              });
             });
-          });
+        }
+      } catch (err) {
+        console.error('Error al persistir la venta en segundo plano:', err);
+        addNotification({
+          title: 'Venta guardada con advertencia',
+          message: 'La venta se registró localmente pero hubo una demora al sincronizar con la base de datos.',
+          type: 'warning',
+        });
       }
-    } catch (err) {
-      console.error('Error al finalizar venta:', err);
-      addNotification({
-        title: saleSaved ? 'Venta guardada con advertencia' : 'Error al finalizar',
-        message: saleSaved
-          ? 'La venta se registró pero no se pudo completar un paso posterior. Verificá el inventario y la facturación.'
-          : 'No se pudo guardar la venta. Intente nuevamente.',
-        type: saleSaved ? 'warning' : 'error',
-      });
-    } finally {
-      submittingRef.current = false;
-      setIsSubmitting(false);
-    }
+    })();
   };
 
   finalizeAccreditedPaymentRef.current = () => {
-    window.setTimeout(() => void handleConfirmCheckout(), 0);
+    handleConfirmCheckout();
   };
 
   const chargeSettled =
