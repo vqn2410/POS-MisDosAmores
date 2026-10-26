@@ -29,6 +29,7 @@ import {
   CheckCircle,
   ShieldCheck,
   RefreshCw,
+  Receipt,
 } from 'lucide-react';
 import type { FiscalInvoice, PaymentMethodType, Sale } from '../../../types';
 import { QRCodeSVG } from 'qrcode.react';
@@ -121,6 +122,18 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
   const [completedSale, setCompletedSale] = React.useState<Sale | null>(null);
   const [completedCountdown, setCompletedCountdown] = React.useState(20);
 
+  // Estado de espera para ARCA/AFIP (Mercado Pago, Cuenta DNI, Tarjeta)
+  const [isAwaitingArca, setIsAwaitingArca] = React.useState(false);
+  const [arcaTimeoutSeconds, setArcaTimeoutSeconds] = React.useState(12);
+  const [arcaStatusMessage, setArcaStatusMessage] = React.useState<string | null>(null);
+
+  const handleCloseCompletedSale = React.useCallback(() => {
+    setCompletedSale(null);
+    setIsAwaitingArca(false);
+    setArcaTimeoutSeconds(12);
+    setArcaStatusMessage(null);
+  }, []);
+
   // Cuenta regresiva de 20 segundos para la ventana de confirmación de pago / impresión
   React.useEffect(() => {
     if (!completedSale) {
@@ -133,7 +146,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
       setCompletedCountdown((prev) => {
         if (prev <= 1) {
           window.clearInterval(interval);
-          setCompletedSale(null);
+          handleCloseCompletedSale();
           return 0;
         }
         return prev - 1;
@@ -143,7 +156,30 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
     return () => {
       window.clearInterval(interval);
     };
-  }, [completedSale]);
+  }, [completedSale, handleCloseCompletedSale]);
+
+  // Timeout de 12 segundos para desbloquear botón de imprimir si ARCA/AFIP demora por fallas de red
+  React.useEffect(() => {
+    if (!completedSale || !isAwaitingArca) return;
+
+    setArcaTimeoutSeconds(12);
+    const interval = window.setInterval(() => {
+      setArcaTimeoutSeconds((prev) => {
+        if (prev <= 1) {
+          window.clearInterval(interval);
+          setIsAwaitingArca(false);
+          setArcaStatusMessage('Tiempo de espera ARCA agotado (12s). Podés imprimir el comprobante.');
+          setCompletedCountdown((c) => Math.max(c, 10));
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [completedSale, isAwaitingArca]);
   const finalizeAccreditedPaymentRef = React.useRef<() => void>(() => undefined);
   // Banner "PAGO ACREDITADO CON ÉXITO" + sonido al acreditarse un pago.
   const [accredited, setAccredited] = React.useState<{ label: string; amount: number } | null>(null);
@@ -555,6 +591,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
       change: 0,
       surchargeAmount: useCustomAmount ? 0 : computeSurcharge(amt, cdniPercent),
     });
+    finalizeAccreditedPaymentRef.current();
     notifyAccredited('Cuenta DNI', amt);
 
     addNotification({
@@ -574,6 +611,8 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
       ? Math.min(computeSurcharge(amt, cardRate), pendingBase * (cardRate / 100))
       : 0;
 
+    const willCoverTotal = totalPaid + amt >= checkoutTotal - 0.01;
+
     addPayment({
       method: selectedMethod === 'MERCADOPAGO' || selectedMethod === 'CUENTA_DNI' ? 'QR' : (selectedMethod as PaymentMethodType),
       amount: amt,
@@ -583,6 +622,11 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
     });
     notifyAccredited(paymentMethodLabel({ method: selectedMethod === 'MERCADOPAGO' || selectedMethod === 'CUENTA_DNI' ? 'QR' : selectedMethod }), amt);
     setPayAmount('');
+
+    // En efectivo, transferencia u otros métodos, si cubre el total finaliza automáticamente y abre la ventana
+    if (willCoverTotal) {
+      finalizeAccreditedPaymentRef.current();
+    }
   };
 
   const handleConfirmCheckout = async () => {
@@ -632,6 +676,19 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
 
       const finalSale = sale;
 
+      // Determinamos si corresponde facturación electrónica en ARCA (Mercado Pago, Cuenta DNI, Tarjeta)
+      const isFiscalMethod = Boolean(navigator.onLine && fiscalAmount > 0);
+
+      // Si es fiscal, iniciamos en estado de espera y bloqueamos el botón de imprimir con timeout de 12s
+      if (isFiscalMethod) {
+        setIsAwaitingArca(true);
+        setArcaTimeoutSeconds(12);
+        setArcaStatusMessage(null);
+      } else {
+        setIsAwaitingArca(false);
+        setArcaStatusMessage(null);
+      }
+
       // ── Mostrar ventana de confirmación INMEDIATAMENTE ──
       // Se abre de inmediato con la cuenta regresiva de 20s para imprimir o cerrar sin demoras
       setCompletedSale(finalSale);
@@ -643,8 +700,8 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
       });
 
       // Si corresponde facturación ARCA (tarjeta / QR), se procesa en segundo plano
-      // para no bloquear la interfaz ni hacer esperar 20 segundos al cajero.
-      if (navigator.onLine && fiscalAmount > 0) {
+      // con bloqueo del botón de imprimir hasta que confirme o se venza el timeout de 12s
+      if (isFiscalMethod) {
         FiscalRulesEngine.processFiscalEvaluation('CARD', {
           concept: 1,
           docType: customer.taxId ? 80 : 99,
@@ -677,6 +734,12 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
               finalSale.fiscalInvoice = invoice;
               finalSale.notes = notes;
               setCompletedSale((prev) => (prev && prev.id === saleId ? { ...prev, fiscalInvoice: invoice, notes } : prev));
+              
+              // Factura confirmada: recién ahí habilita la impresión
+              setIsAwaitingArca(false);
+              setArcaStatusMessage(`Factura ARCA confirmada · CAE ${fr.cae}`);
+              setCompletedCountdown((c) => Math.max(c, 10));
+
               addNotification({
                 title: 'Factura ARCA Emitida',
                 message: `Ticket #${finalSale.ticketNumber} facturado con éxito. CAE: ${fr.cae}`,
@@ -687,11 +750,15 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
               await updateSale.mutateAsync({ id: saleId, data: { notes } });
               finalSale.notes = notes;
               setCompletedSale((prev) => (prev && prev.id === saleId ? { ...prev, notes } : prev));
+              setIsAwaitingArca(false);
             }
           })
           .catch((err) => {
             const arcaError = err instanceof Error ? err.message : 'ARCA no pudo emitir la factura.';
             console.warn('ARCA background fiscalization error:', err);
+            // Si falló ARCA o expiró red, desbloqueamos para permitir imprimir comprobante interno
+            setIsAwaitingArca(false);
+            setArcaStatusMessage(`ARCA no autorizó: ${arcaError}`);
             addNotification({
               title: 'Venta sin factura ARCA',
               message: `Ticket ${finalSale.ticketNumber}: ARCA no emitió factura (${arcaError}).`,
@@ -1384,16 +1451,16 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
 
     <Dialog
       open={Boolean(completedSale)}
-      onClose={() => setCompletedSale(null)}
+      onClose={handleCloseCompletedSale}
       onKeyDown={(e) => {
         if (e.key === 'Escape') {
           e.preventDefault();
-          setCompletedSale(null);
+          handleCloseCompletedSale();
         } else if (e.key === 'Enter') {
           e.preventDefault();
-          if (!completedSale) return;
+          if (!completedSale || isAwaitingArca) return;
           const sale = completedSale;
-          setCompletedSale(null);
+          handleCloseCompletedSale();
           onPrintTicket(sale);
         }
       }}
@@ -1435,9 +1502,95 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
         <Typography sx={{ fontWeight: 800, color: '#0F172A', fontSize: '1.15rem', mb: 0.5 }}>
           Ticket #{completedSale?.ticketNumber}
         </Typography>
-        <Typography sx={{ fontWeight: 600, color: '#475569', fontSize: '0.95rem', mb: 2 }}>
+        <Typography sx={{ fontWeight: 600, color: '#475569', fontSize: '0.95rem', mb: 1.5 }}>
           El pago fue acreditado y la venta se registró correctamente.
         </Typography>
+
+        {isAwaitingArca ? (
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 1.2,
+              px: 2,
+              py: 0.9,
+              mb: 1.5,
+              borderRadius: 3,
+              bgcolor: '#FEF3C7',
+              border: '1px solid #FCD34D',
+              color: '#92400E',
+              fontSize: '0.85rem',
+              fontWeight: 800,
+            }}
+          >
+            <CircularProgress size={16} color="inherit" />
+            Emitiendo factura ARCA/AFIP... ({arcaTimeoutSeconds}s)
+          </Box>
+        ) : completedSale?.fiscalInvoice?.cae ? (
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 1,
+              px: 2,
+              py: 0.8,
+              mb: 1.5,
+              borderRadius: 3,
+              bgcolor: '#F0FDF4',
+              border: '1px solid #86EFAC',
+              color: '#15803D',
+              fontSize: '0.85rem',
+              fontWeight: 800,
+            }}
+          >
+            <CheckCircle size={17} />
+            Factura ARCA emitida · CAE {completedSale.fiscalInvoice.cae}
+          </Box>
+        ) : arcaStatusMessage ? (
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 1,
+              px: 2,
+              py: 0.8,
+              mb: 1.5,
+              borderRadius: 3,
+              bgcolor: '#F1F5F9',
+              border: '1px solid #CBD5E1',
+              color: '#475569',
+              fontSize: '0.82rem',
+              fontWeight: 700,
+            }}
+          >
+            {arcaStatusMessage}
+          </Box>
+        ) : (
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 1,
+              px: 2,
+              py: 0.8,
+              mb: 1.5,
+              borderRadius: 3,
+              bgcolor: '#F8FAFC',
+              border: '1px solid #E2E8F0',
+              color: '#334155',
+              fontSize: '0.85rem',
+              fontWeight: 800,
+            }}
+          >
+            <Receipt size={17} color="#475569" />
+            Comprobante no fiscal listo para imprimir
+          </Box>
+        )}
+
         <Box
           sx={{
             display: 'inline-flex',
@@ -1460,7 +1613,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
       <DialogActions sx={{ p: 2.5, pt: 1, justifyContent: 'space-between', gap: 1.5 }}>
         <Button
           variant="outlined"
-          onClick={() => setCompletedSale(null)}
+          onClick={handleCloseCompletedSale}
           sx={{ fontWeight: 800, borderRadius: 3, minHeight: 46, px: 2.5 }}
         >
           Cerrar ({completedCountdown}s)
@@ -1468,17 +1621,34 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
         <Button
           variant="contained"
           color="primary"
-          autoFocus
-          startIcon={<Printer size={18} />}
+          autoFocus={!isAwaitingArca}
+          disabled={isAwaitingArca}
+          startIcon={
+            isAwaitingArca ? (
+              <CircularProgress size={18} color="inherit" />
+            ) : (
+              <Printer size={18} />
+            )
+          }
           onClick={() => {
-            if (!completedSale) return;
+            if (!completedSale || isAwaitingArca) return;
             const sale = completedSale;
-            setCompletedSale(null);
+            handleCloseCompletedSale();
             onPrintTicket(sale);
           }}
-          sx={{ fontWeight: 900, borderRadius: 3, minHeight: 46, px: 3 }}
+          sx={{
+            fontWeight: 900,
+            borderRadius: 3,
+            minHeight: 46,
+            px: 3,
+            opacity: isAwaitingArca ? 0.7 : 1,
+          }}
         >
-          Imprimir ticket (Enter)
+          {isAwaitingArca
+            ? `Aguardando ARCA (${arcaTimeoutSeconds}s)`
+            : completedSale?.fiscalInvoice?.cae
+            ? 'Imprimir factura (Enter)'
+            : 'Imprimir ticket no fiscal (Enter)'}
         </Button>
       </DialogActions>
     </Dialog>
