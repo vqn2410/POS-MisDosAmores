@@ -116,6 +116,7 @@ export const POSView: React.FC<POSViewProps> = ({ onOpenScanner }) => {
   const [isProductSearchOpen, setIsProductSearchOpen] = React.useState(false);
   const [productSearchTerm, setProductSearchTerm] = React.useState('');
   const [selectedSearchProduct, setSelectedSearchProduct] = React.useState<Product | null>(null);
+  const [searchSelectedIndex, setSearchSelectedIndex] = React.useState<number>(0);
   const [isPriceChangeOpen, setIsPriceChangeOpen] = React.useState(false);
   const [isProductEditorOpen, setIsProductEditorOpen] = React.useState(false);
   const [productEditorProduct, setProductEditorProduct] = React.useState<Product | null>(null);
@@ -190,10 +191,11 @@ export const POSView: React.FC<POSViewProps> = ({ onOpenScanner }) => {
       } else if (e.key === 'F6') {
         e.preventDefault();
         if (cart.length > 0) suspendSale();
-      } else if (e.ctrlKey && e.key.toLowerCase() === 'b') {
+      } else if ((e.ctrlKey && e.key.toLowerCase() === 'b') || e.key.toLowerCase() === 'b') {
         e.preventDefault();
         setProductSearchTerm('');
         setSelectedSearchProduct(null);
+        setSearchSelectedIndex(0);
         setIsProductSearchOpen(true);
       }
     };
@@ -214,6 +216,7 @@ export const POSView: React.FC<POSViewProps> = ({ onOpenScanner }) => {
         setSearchTerm('');
         setProductSearchTerm('');
         setSelectedSearchProduct(null);
+        setSearchSelectedIndex(0);
         setIsProductSearchOpen(true);
         return;
       }
@@ -378,13 +381,22 @@ export const POSView: React.FC<POSViewProps> = ({ onOpenScanner }) => {
     setIsStockEntryOpen(true);
   };
 
-  const productSearchResults = products.filter((product) => {
+  const productSearchResults = React.useMemo(() => {
     const query = productSearchTerm.trim().toLowerCase();
-    return !query || product.name.toLowerCase().includes(query) || product.sku.toLowerCase().includes(query) || product.barcode?.includes(query);
-  }).slice(0, 20);
+    if (!query) return products.slice(0, 50);
+    return products.filter((product) => {
+      return (
+        product.name.toLowerCase().includes(query) ||
+        product.sku.toLowerCase().includes(query) ||
+        product.barcode?.includes(query) ||
+        product.description?.toLowerCase().includes(query) ||
+        product.categoryName?.toLowerCase().includes(query)
+      );
+    }).slice(0, 50);
+  }, [products, productSearchTerm]);
 
-  const addSearchProductToCart = () => {
-    const product = selectedSearchProduct || productSearchResults[0];
+  const addSearchProductToCart = (targetProduct?: Product) => {
+    const product = targetProduct || selectedSearchProduct || productSearchResults[searchSelectedIndex] || productSearchResults[0];
     if (!product) return;
 
     const quantityInCart = cart
@@ -1236,34 +1248,281 @@ export const POSView: React.FC<POSViewProps> = ({ onOpenScanner }) => {
         </DialogActions>
       </Dialog>
 
-      <Dialog open={isProductSearchOpen} onClose={() => setIsProductSearchOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle sx={{ fontWeight: 900 }}>Buscar productos (Ctrl+B)</DialogTitle>
-        <DialogContent>
+      <Dialog
+        open={isProductSearchOpen}
+        onClose={() => {
+          setIsProductSearchOpen(false);
+          focusSearchInput();
+        }}
+        maxWidth="md"
+        fullWidth
+        slotProps={{
+          paper: {
+            sx: {
+              borderRadius: 3.5,
+              maxHeight: '85vh',
+              width: '100%',
+              maxWidth: 960,
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+              overflow: 'hidden',
+            },
+          },
+        }}
+      >
+        <DialogTitle
+          sx={{
+            fontWeight: 900,
+            pb: 1.5,
+            pt: 2.5,
+            px: 3,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            borderBottom: '1px solid #E2E8F0',
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Box sx={{ p: 1, bgcolor: '#EFF6FF', borderRadius: 2.5, color: '#1E4EBC', display: 'flex', alignItems: 'center' }}>
+              <SearchIcon size={24} />
+            </Box>
+            <Box>
+              <Typography variant="h6" sx={{ fontWeight: 900, color: '#0F172A', lineHeight: 1.2 }}>
+                Búsqueda de Productos (B)
+              </Typography>
+              <Typography variant="caption" sx={{ color: '#64748B', fontWeight: 600 }}>
+                Buscá por código, descripción o código de barras · Navegá con ↑ ↓ y presioná Enter
+              </Typography>
+            </Box>
+          </Box>
+          <IconButton
+            onClick={() => {
+              setIsProductSearchOpen(false);
+              focusSearchInput();
+            }}
+            size="small"
+            sx={{ color: '#64748B', '&:hover': { bgcolor: '#F1F5F9' } }}
+          >
+            <X size={20} />
+          </IconButton>
+        </DialogTitle>
+
+        <Box sx={{ px: 3, pt: 2, pb: 1.5, bgcolor: '#FFFFFF' }}>
           <TextField
             autoFocus
             fullWidth
-            label="Nombre, SKU o código de barras"
+            placeholder="Escribí código, descripción o código de barras..."
             value={productSearchTerm}
-            onChange={(event) => { setProductSearchTerm(event.target.value); setSelectedSearchProduct(null); }}
-            onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addSearchProductToCart(); } }}
-            sx={{ mb: 1.5 }}
+            onChange={(event) => {
+              setProductSearchTerm(event.target.value);
+              setSearchSelectedIndex(0);
+              setSelectedSearchProduct(null);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                setSearchSelectedIndex((prev) => Math.min(prev + 1, Math.max(0, productSearchResults.length - 1)));
+              } else if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                setSearchSelectedIndex((prev) => Math.max(prev - 1, 0));
+              } else if (event.key === 'Enter') {
+                event.preventDefault();
+                const targetProduct = productSearchResults[searchSelectedIndex] || selectedSearchProduct || productSearchResults[0];
+                if (targetProduct) {
+                  addSearchProductToCart(targetProduct);
+                }
+              } else if (event.key === 'Escape') {
+                event.preventDefault();
+                setIsProductSearchOpen(false);
+                focusSearchInput();
+              }
+            }}
+            slotProps={{
+              input: {
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon size={20} color="#64748B" />
+                  </InputAdornment>
+                ),
+                endAdornment: productSearchTerm ? (
+                  <InputAdornment position="end">
+                    <IconButton
+                      size="small"
+                      onClick={() => {
+                        setProductSearchTerm('');
+                        setSearchSelectedIndex(0);
+                        setSelectedSearchProduct(null);
+                      }}
+                    >
+                      <X size={16} />
+                    </IconButton>
+                  </InputAdornment>
+                ) : null,
+                sx: {
+                  borderRadius: 3,
+                  fontSize: '1rem',
+                  fontWeight: 600,
+                  bgcolor: '#F8FAFC',
+                },
+              },
+            }}
           />
-          {productSearchResults.map((product) => (
-            <Button
-              key={product.id}
-              fullWidth
-              variant={selectedSearchProduct?.id === product.id ? 'contained' : 'text'}
-              onClick={() => setSelectedSearchProduct(product)}
-              onDoubleClick={addSearchProductToCart}
-              sx={{ justifyContent: 'flex-start', textAlign: 'left', py: 1.25, textTransform: 'none' }}
-            >
-              {product.name} - {product.stock} {product.unit}
-            </Button>
-          ))}
+        </Box>
+
+        <DialogContent sx={{ p: 0, px: 3, flexGrow: 1, overflowY: 'auto' }}>
+          {productSearchResults.length === 0 ? (
+            <Box sx={{ textAlign: 'center', py: 6, color: '#64748B' }}>
+              <Typography variant="body1" sx={{ fontWeight: 800, mb: 0.5, color: '#334155' }}>
+                No se encontraron productos
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Verificá que el código o la descripción ingresada sean correctos.
+              </Typography>
+            </Box>
+          ) : (
+            <Table size="small" stickyHeader sx={{ minWidth: 650 }}>
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={{ fontWeight: 800, color: '#475569', bgcolor: '#F8FAFC', py: 1.2, width: '22%' }}>CÓDIGO</TableCell>
+                  <TableCell sx={{ fontWeight: 800, color: '#475569', bgcolor: '#F8FAFC', py: 1.2, width: '40%' }}>DESCRIPCIÓN</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 800, color: '#475569', bgcolor: '#F8FAFC', py: 1.2, width: '16%' }}>PRECIO</TableCell>
+                  <TableCell align="center" sx={{ fontWeight: 800, color: '#475569', bgcolor: '#F8FAFC', py: 1.2, width: '12%' }}>STOCK</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 800, color: '#475569', bgcolor: '#F8FAFC', py: 1.2, width: '10%' }}>ACCIÓN</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {productSearchResults.map((product, idx) => {
+                  const isSelected = searchSelectedIndex === idx || selectedSearchProduct?.id === product.id;
+                  return (
+                    <TableRow
+                      key={product.id}
+                      hover
+                      onClick={() => {
+                        setSearchSelectedIndex(idx);
+                        setSelectedSearchProduct(product);
+                      }}
+                      onDoubleClick={() => addSearchProductToCart(product)}
+                      sx={{
+                        cursor: 'pointer',
+                        bgcolor: isSelected ? '#EFF6FF' : undefined,
+                        '&:hover': { bgcolor: isSelected ? '#DBEAFE' : '#F8FAFC' },
+                        transition: 'background-color 0.1s ease',
+                      }}
+                    >
+                      <TableCell sx={{ py: 1.2 }}>
+                        <Typography sx={{ fontWeight: 800, fontFamily: 'monospace', fontSize: '0.9rem', color: '#0F172A' }}>
+                          {product.sku || product.barcode || '-'}
+                        </Typography>
+                        {product.barcode && product.sku && product.barcode !== product.sku && (
+                          <Typography variant="caption" sx={{ color: '#64748B', display: 'block', fontFamily: 'monospace', fontSize: '0.75rem' }}>
+                            CB: {product.barcode}
+                          </Typography>
+                        )}
+                      </TableCell>
+                      <TableCell sx={{ py: 1.2 }}>
+                        <Typography sx={{ fontWeight: 700, color: '#0F172A', fontSize: '0.92rem' }}>
+                          {product.name}
+                        </Typography>
+                        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mt: 0.25, flexWrap: 'wrap' }}>
+                          {product.categoryName && (
+                            <Typography variant="caption" sx={{ color: '#64748B', fontWeight: 600 }}>
+                              {product.categoryName}
+                            </Typography>
+                          )}
+                          {product.saleType === 'WEIGHT' && (
+                            <Chip label="Balanza / Peso" size="small" sx={{ height: 18, fontSize: '0.65rem', fontWeight: 700, bgcolor: '#FEF3C7', color: '#B45309' }} />
+                          )}
+                        </Box>
+                      </TableCell>
+                      <TableCell align="right" sx={{ py: 1.2 }}>
+                        <Typography sx={{ fontWeight: 900, color: '#16A34A', fontSize: '1.05rem', whiteSpace: 'nowrap' }}>
+                          ${product.salePrice.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          {product.saleType === 'WEIGHT' ? (
+                            <Typography component="span" variant="caption" sx={{ color: '#64748B', ml: 0.5, fontWeight: 700 }}>
+                              / kg
+                            </Typography>
+                          ) : null}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="center" sx={{ py: 1.2 }}>
+                        {product.tracksStock === false ? (
+                          <Chip label="Sin límite" size="small" sx={{ fontWeight: 700, fontSize: '0.75rem', bgcolor: '#F1F5F9', color: '#475569' }} />
+                        ) : product.stock <= 0 ? (
+                          <Chip label={`0 ${product.unit || 'u.'}`} size="small" sx={{ fontWeight: 800, fontSize: '0.75rem', bgcolor: '#FEE2E2', color: '#DC2626' }} />
+                        ) : product.stock <= (product.minStock || 5) ? (
+                          <Chip label={`${product.stock} ${product.unit || 'u.'}`} size="small" sx={{ fontWeight: 800, fontSize: '0.75rem', bgcolor: '#FEF3C7', color: '#D97706' }} />
+                        ) : (
+                          <Chip label={`${product.stock} ${product.unit || 'u.'}`} size="small" sx={{ fontWeight: 800, fontSize: '0.75rem', bgcolor: '#DCFCE7', color: '#16A34A' }} />
+                        )}
+                      </TableCell>
+                      <TableCell align="right" sx={{ py: 1.2 }}>
+                        <Button
+                          size="small"
+                          variant={isSelected ? 'contained' : 'outlined'}
+                          color="primary"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            addSearchProductToCart(product);
+                          }}
+                          sx={{
+                            borderRadius: 2,
+                            fontWeight: 800,
+                            fontSize: '0.78rem',
+                            textTransform: 'none',
+                            px: 1.5,
+                            minWidth: 70,
+                          }}
+                        >
+                          Agregar
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          )}
         </DialogContent>
-        <DialogActions sx={{ p: 2 }}>
-          <Button onClick={() => setIsProductSearchOpen(false)}>Cancelar</Button>
-          <Button variant="contained" onClick={addSearchProductToCart} disabled={!selectedSearchProduct && productSearchResults.length === 0}>Agregar (Enter)</Button>
+
+        <DialogActions
+          sx={{
+            p: 2,
+            px: 3,
+            bgcolor: '#F8FAFC',
+            borderTop: '1px solid #E2E8F0',
+            justifyContent: 'space-between',
+          }}
+        >
+          <Typography variant="body2" sx={{ color: '#64748B', fontWeight: 600 }}>
+            Mostrando <strong>{productSearchResults.length}</strong> productos
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 1.5 }}>
+            <Button
+              onClick={() => {
+                setIsProductSearchOpen(false);
+                focusSearchInput();
+              }}
+              variant="outlined"
+              sx={{ borderRadius: 2.5, fontWeight: 700, textTransform: 'none', color: '#475569', borderColor: '#CBD5E1' }}
+            >
+              Cerrar (Esc)
+            </Button>
+            <Button
+              variant="contained"
+              color="primary"
+              onClick={() => {
+                const targetProduct = productSearchResults[searchSelectedIndex] || selectedSearchProduct || productSearchResults[0];
+                if (targetProduct) {
+                  addSearchProductToCart(targetProduct);
+                }
+              }}
+              disabled={productSearchResults.length === 0}
+              sx={{ borderRadius: 2.5, fontWeight: 800, textTransform: 'none', px: 2.5 }}
+            >
+              Agregar al carrito (Enter)
+            </Button>
+          </Box>
         </DialogActions>
       </Dialog>
 
