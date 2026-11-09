@@ -395,6 +395,11 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
   };
 
   const startPointCharge = async () => {
+    if (chargeAmount < 15) {
+      setPointError('Mercado Pago Point exige un monto mínimo de $15,00 para cobrar en el lector. Para un monto de prueba menor, ingresá o confirmá el monto abajo.');
+      setPointStatus('ERROR');
+      return;
+    }
     pointAddedRef.current = false;
     pointPendingRef.current = true;
     pointCustomRef.current = useCustomAmount;
@@ -404,7 +409,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
     try {
       const { devices } = await listMercadoPagoPointDevices();
       if (!devices.length) throw new Error('No hay dispositivos Point vinculados a esta cuenta de Mercado Pago.');
-      const device = devices[0];
+      const device = devices.find((d) => d.operatingMode === 'PDV') || devices[0];
       const externalReference = `POS-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
       const order = await createMercadoPagoPointOrder({
         amount: pointAmountRef.current,
@@ -412,7 +417,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
         externalReference,
       });
       setPointOrderId(order.orderId);
-      setPointDeviceName(device.name || null);
+      setPointDeviceName(order.deviceId || device.name || null);
       setPointStatus('WAITING');
     } catch (error) {
       pointPendingRef.current = false;

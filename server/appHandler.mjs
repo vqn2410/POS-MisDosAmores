@@ -22,11 +22,11 @@ async function readJson(request) {
   return body ? JSON.parse(body) : {};
 }
 
-const productionAccessToken = process.env.MP_PRODUCTION_ACCESS_TOKEN;
-const productionExternalPosId = process.env.MP_PRODUCTION_EXTERNAL_POS_ID;
-const productionPointDeviceId = process.env.MP_PRODUCTION_POINT_DEVICE_ID;
-let productionCollectorId = process.env.MP_PRODUCTION_COLLECTOR_ID ? Number(process.env.MP_PRODUCTION_COLLECTOR_ID) : undefined;
-const notificationUrl = process.env.MP_NOTIFICATION_URL;
+const productionAccessToken = process.env.MP_PRODUCTION_ACCESS_TOKEN?.trim();
+const productionExternalPosId = process.env.MP_PRODUCTION_EXTERNAL_POS_ID?.trim();
+const productionPointDeviceId = process.env.MP_PRODUCTION_POINT_DEVICE_ID?.trim();
+let productionCollectorId = process.env.MP_PRODUCTION_COLLECTOR_ID ? Number(process.env.MP_PRODUCTION_COLLECTOR_ID.trim()) : undefined;
+const notificationUrl = process.env.MP_NOTIFICATION_URL?.trim();
 
 async function mercadoPagoRequest(path, options = {}, token) {
   if (!token) throw new Error('Falta el Access Token requerido en las variables de entorno.');
@@ -40,7 +40,14 @@ async function mercadoPagoRequest(path, options = {}, token) {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const mpMessage = payload.errors?.[0]?.message || payload.message || payload.error;
+    const firstError = payload.errors?.[0];
+    const details = Array.isArray(firstError?.details) ? firstError.details.join(' · ') : '';
+    if (/greater than or equal to 15/i.test(details)) {
+      throw new Error('Mercado Pago Point: el monto mínimo permitido por tarjeta/lector es de $15,00.');
+    }
+    const mpMessage = firstError?.message
+      ? `${firstError.message}${details ? ` (${details})` : ''}`
+      : payload.message || payload.error;
     throw new Error(mpMessage ? `Mercado Pago: ${mpMessage}` : 'Mercado Pago rechazó la solicitud.');
   }
   return payload;
@@ -191,16 +198,19 @@ async function listPointDevices() {
 }
 
 async function resolvePointDeviceId() {
-  if (productionPointDeviceId) return productionPointDeviceId;
+  if (productionPointDeviceId) return productionPointDeviceId.trim();
   const devices = await listPointDevices();
   if (devices.length === 0) throw new Error('No hay lectores Point vinculados a esta cuenta. Vinculá el Point Smart en la app Mercado Pago y verificá que esté en modo Punto de Venta (PDV).');
+  const pdvDevices = devices.filter((d) => d.operatingMode === 'PDV');
+  if (pdvDevices.length === 1) return pdvDevices[0].deviceId.trim();
   if (devices.length > 1) throw new Error('Hay varios lectores Point. Configurá MP_PRODUCTION_POINT_DEVICE_ID en las variables de entorno.');
-  return devices[0].deviceId;
+  return devices[0].deviceId.trim();
 }
 
 async function createPointOrder(data) {
   const amount = Number(data.amount);
   if (!Number.isFinite(amount) || amount <= 0) throw new Error('El monto del cobro debe ser mayor a cero.');
+  if (amount < 15) throw new Error('Mercado Pago Point exige un monto mínimo de $15,00 para cobrar con tarjeta en el lector.');
   if (!data.externalReference) throw new Error('Falta la referencia externa del cobro con Point.');
   if (!productionAccessToken) throw new Error('Falta MP_PRODUCTION_ACCESS_TOKEN en las variables de entorno.');
   const deviceId = await resolvePointDeviceId();
@@ -209,8 +219,8 @@ async function createPointOrder(data) {
     headers: { 'X-Idempotency-Key': crypto.randomUUID() },
     body: JSON.stringify({
       type: 'point',
-      external_reference: data.externalReference,
-      description: data.description || 'Venta POS Mis Dos Amores',
+      external_reference: String(data.externalReference).trim(),
+      description: String(data.description || 'Venta POS Mis Dos Amores').trim(),
       transactions: { payments: [{ amount: amount.toFixed(2) }] },
       config: { point: { terminal_id: deviceId, print_on_terminal: 'no_ticket' } },
     }),
