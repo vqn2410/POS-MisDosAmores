@@ -6,10 +6,12 @@ import basicSsl from '@vitejs/plugin-basic-ssl'
 export default defineConfig({
   plugins: [react(), basicSsl()],
   server: {
+    port: 5175,
     host: '0.0.0.0',
     proxy: {
       '/api/mercadopago': 'http://localhost:3001',
       '/api/arca': 'http://localhost:3001',
+      '/api/cuentadni': 'http://localhost:3001',
     },
   },
 })

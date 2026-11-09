@@ -1,4 +1,5 @@
 import { handleArcaRequest } from './arca/arcaRoutes.mjs';
+import { handleCuentaDniRequest } from './cuentadni/cuentaDniRoutes.mjs';
 
 const QR_ORDER_TTL_MS = 10 * 60 * 1000;
 const orders = new Map();
@@ -255,6 +256,9 @@ export async function handleRequest(request, response) {
     const url = new URL(request.url, `http://${request.headers.host || 'localhost'}`);
     if (url.pathname.startsWith('/api/arca/')) {
       return handleArcaRequest(request, response);
+    }
+    if (url.pathname.startsWith('/api/cuentadni/')) {
+      return handleCuentaDniRequest(request, response);
     }
     if (request.method === 'GET' && url.pathname === '/api/mercadopago/health') {
       return sendJson(response, 200, { configured: Boolean(productionAccessToken && productionExternalPosId) });

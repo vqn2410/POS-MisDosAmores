@@ -124,20 +124,30 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
 
   // Estado de espera para ARCA/AFIP (Mercado Pago, Cuenta DNI, Tarjeta)
   const [isAwaitingArca, setIsAwaitingArca] = React.useState(false);
-  const [arcaTimeoutSeconds, setArcaTimeoutSeconds] = React.useState(12);
   const [arcaStatusMessage, setArcaStatusMessage] = React.useState<string | null>(null);
 
   const handleCloseCompletedSale = React.useCallback(() => {
     setCompletedSale(null);
     setIsAwaitingArca(false);
-    setArcaTimeoutSeconds(12);
     setArcaStatusMessage(null);
   }, []);
 
-  // Cuenta regresiva de 20 segundos para la ventana de confirmación de pago / impresión
+  // Confirmación manual: permite imprimir un comprobante no fiscal si ARCA no responde a tiempo.
+  const handleManualArcaConfirm = () => {
+    setIsAwaitingArca(false);
+    setArcaStatusMessage('Confirmado manualmente: la factura ARCA quedó pendiente de emisión.');
+  };
+
+  // Cuenta regresiva de 20 segundos para la ventana de confirmación de pago / impresión.
+  // Mientras se espera la factura ARCA (Mercado Pago, Cuenta DNI, Tarjeta) la cuenta queda pausada
+  // para no cerrar la ventana antes de poder imprimir la factura fiscal.
   React.useEffect(() => {
     if (!completedSale) {
       setCompletedCountdown(20);
+      return;
+    }
+
+    if (isAwaitingArca) {
       return;
     }
 
@@ -156,30 +166,10 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
     return () => {
       window.clearInterval(interval);
     };
-  }, [completedSale, handleCloseCompletedSale]);
+  }, [completedSale, isAwaitingArca, handleCloseCompletedSale]);
 
-  // Timeout de 12 segundos para desbloquear botón de imprimir si ARCA/AFIP demora por fallas de red
-  React.useEffect(() => {
-    if (!completedSale || !isAwaitingArca) return;
-
-    setArcaTimeoutSeconds(12);
-    const interval = window.setInterval(() => {
-      setArcaTimeoutSeconds((prev) => {
-        if (prev <= 1) {
-          window.clearInterval(interval);
-          setIsAwaitingArca(false);
-          setArcaStatusMessage('Tiempo de espera ARCA agotado (12s). Podés imprimir el comprobante.');
-          setCompletedCountdown((c) => Math.max(c, 10));
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => {
-      window.clearInterval(interval);
-    };
-  }, [completedSale, isAwaitingArca]);
+  // (Timeout de 12s eliminado): el botón "Imprimir factura" solo se habilita cuando ARCA confirma la factura
+  // (o cuando falla y se informa el error). El fetch a ARCA ya tiene su propio abort a los 12s (arcaApi).
   const finalizeAccreditedPaymentRef = React.useRef<() => void>(() => undefined);
   // Banner "PAGO ACREDITADO CON ÉXITO" + sonido al acreditarse un pago.
   const [accredited, setAccredited] = React.useState<{ label: string; amount: number } | null>(null);
@@ -202,7 +192,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
   const mpPaymentAddedRef = React.useRef(false);
   const mpPendingRef = React.useRef(false);
 
-  // Cuenta DNI manual confirmation state
+  // Cuenta DNI confirmation state (confirmación manual)
   const [cdniPayment, setCdniPayment] = React.useState<CuentaDniPaymentResult | null>(null);
   const cdniRequestRef = React.useRef(0);
 
@@ -572,17 +562,30 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
   };
 
   const handleConfirmCdni = async () => {
-    if (!cdniPayment) return;
-
     const referenceNumber = `MANUAL-${Date.now()}`;
     const cashier = useAuthStore.getState().user;
-    const confirmed = await cdniProvider.manuallyConfirmPayment(cdniPayment.id, {
-      referenceNumber,
-      confirmedByUserId: cashier?.id || 'usr-unknown',
-      confirmedByUserName: cashier?.fullName || 'Usuario',
-    });
+    let confirmed: any = null;
+    if (cdniPayment) {
+      try {
+        confirmed = await cdniProvider.manuallyConfirmPayment(cdniPayment.id, {
+          referenceNumber,
+          confirmedByUserId: cashier?.id || 'usr-unknown',
+          confirmedByUserName: cashier?.fullName || 'Usuario',
+        });
+      } catch (err) {
+        console.warn('Error confirmando en cdniProvider:', err);
+      }
+    }
 
-    setCdniPayment(confirmed);
+    setCdniPayment(confirmed || ({
+      id: `manual-${Date.now()}`,
+      amount: chargeAmount,
+      status: 'MANUALLY_CONFIRMED',
+      referenceNumber,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    } as any));
+
     const amt = chargeAmount;
     addPayment({
       method: 'QR',
@@ -662,10 +665,9 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
     // Determinamos si corresponde facturación electrónica en ARCA (Mercado Pago, Cuenta DNI, Tarjeta)
     const isFiscalMethod = Boolean(navigator.onLine && fiscalAmount > 0);
 
-    // Si es fiscal, iniciamos en estado de espera y bloqueamos el botón de imprimir con timeout de 12s
+    // Si es fiscal, iniciamos en estado de espera y bloqueamos el botón de imprimir hasta que ARCA confirme
     if (isFiscalMethod) {
       setIsAwaitingArca(true);
-      setArcaTimeoutSeconds(12);
       setArcaStatusMessage(null);
     } else {
       setIsAwaitingArca(false);
@@ -791,7 +793,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
     selectedMethod === 'MERCADOPAGO'
       ? mpStatus === 'APPROVED'
       : selectedMethod === 'CUENTA_DNI'
-      ? cdniPayment?.status === 'MANUALLY_CONFIRMED'
+      ? cdniPayment?.status === 'MANUALLY_CONFIRMED' || cdniPayment?.status === 'APPROVED'
       : selectedMethod === 'CARD' && pointStatus !== 'IDLE'
       ? pointStatus === 'APPROVED'
       : totalPaid >= checkoutTotal;
@@ -1150,12 +1152,12 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
               </Paper>
             )}
 
-            {/* Cuenta DNI Manual Confirmation Flow */}
+            {/* Cuenta DNI: cobro con Clave DNI (automático) + confirmación manual (fallback) */}
             {selectedMethod === 'CUENTA_DNI' && (
               <Paper elevation={0} sx={{ p: 2.5, mb: 3, borderRadius: 3.5, bgcolor: '#F0FDF4', border: '2px solid #BBF7D0' }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, mb: 1 }}>
                   <CuentaDniLogo height={28} />
-                  <Typography variant="subtitle1" sx={{ fontWeight: 900, color: '#166534' }}>Cobro QR Cuenta DNI (Banco Provincia)</Typography>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 900, color: '#166534' }}>Cobro Cuenta DNI (Banco Provincia)</Typography>
                 </Box>
 
                 <Box sx={{ bgcolor: '#FFFFFF', borderRadius: 3, border: '1px solid #BBF7D0', p: 1.5, mb: 1.5 }}>
@@ -1167,7 +1169,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
                   <Button
                     variant={customAmountActive ? 'contained' : 'outlined'}
                     size="small"
-                    disabled={cdniPayment?.status === 'MANUALLY_CONFIRMED'}
+                    disabled={cdniPayment?.status === 'MANUALLY_CONFIRMED' || cdniPayment?.status === 'APPROVED'}
                     onClick={() => setCustomAmountActive((v) => !v)}
                     sx={{ borderRadius: 2.5, fontWeight: 800 }}
                   >
@@ -1180,34 +1182,41 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
                       label="Monto final ($)"
                       value={customAmount}
                       onChange={(e) => setCustomAmount(e.target.value)}
-                      disabled={cdniPayment?.status === 'MANUALLY_CONFIRMED'}
+                      disabled={cdniPayment?.status === 'MANUALLY_CONFIRMED' || cdniPayment?.status === 'APPROVED'}
                       slotProps={{ input: { sx: { fontWeight: 800, bgcolor: '#FFFFFF' } } }}
                       sx={{ maxWidth: 150 }}
                     />
                   )}
                 </Box>
 
-                {cdniPayment?.status === 'AWAITING_CONFIRMATION' && (
-                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mt: 1.5 }}>
-                    <Alert severity="warning" sx={{ borderRadius: 2.5, fontWeight: 700 }}>
-                      Muestre el QR de Cuenta DNI y, cuando el cliente haya abonado, confirme el pago manualmente.
+                {cdniPayment?.status !== 'APPROVED' && cdniPayment?.status !== 'MANUALLY_CONFIRMED' && (
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mt: 1 }}>
+                    <Alert severity="info" sx={{ borderRadius: 2.5, fontWeight: 700 }}>
+                      Cobro con Cuenta DNI por <strong>${chargeAmount.toFixed(2)}</strong>. Una vez recibido el pago en la app o terminal, confirmá la operación para registrarla.
                     </Alert>
                     <Button
                       variant="contained"
-                      onClick={handleConfirmCdni}
-                      startIcon={<CheckCheck size={18} />}
-                      sx={{ borderRadius: 2.5, fontWeight: 900, bgcolor: '#008037', '&:hover': { bgcolor: '#00662C' } }}
+                      onClick={() => void handleConfirmCdni()}
+                      startIcon={<CheckCheck size={20} />}
+                      sx={{
+                        py: 1.5,
+                        borderRadius: 3,
+                        fontWeight: 900,
+                        fontSize: '1.05rem',
+                        bgcolor: '#008037',
+                        '&:hover': { bgcolor: '#00662C' },
+                      }}
                     >
-                      Confirmar pago manualmente
+                      Confirmar pago Cuenta DNI
                     </Button>
                   </Box>
                 )}
 
-                {cdniPayment?.status === 'MANUALLY_CONFIRMED' && (
+                {(cdniPayment?.status === 'APPROVED' || cdniPayment?.status === 'MANUALLY_CONFIRMED') && (
                   <Box sx={{ p: 1.5, bgcolor: '#DCFCE7', borderRadius: 2.5, border: '1px solid #86EFAC', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
                     <CheckCheck size={24} color="#16A34A" />
                     <Typography variant="body1" sx={{ fontWeight: 900, color: '#15803D' }}>
-                      Pago Confirmado Cuenta DNI
+                      Pago Confirmado Cuenta DNI{cdniPayment?.status === 'APPROVED' && cdniPayment?.operationId ? ` · ${cdniPayment.operationId}` : ''}
                     </Typography>
                   </Box>
                 )}
@@ -1527,7 +1536,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
             }}
           >
             <CircularProgress size={16} color="inherit" />
-            Emitiendo factura ARCA/AFIP... ({arcaTimeoutSeconds}s)
+            Emitiendo factura ARCA/AFIP...
           </Box>
         ) : completedSale?.fiscalInvoice?.cae ? (
           <Box
@@ -1593,6 +1602,20 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
           </Box>
         )}
 
+        {isAwaitingArca && (
+          <Box sx={{ mb: 1.5 }}>
+            <Button
+              variant="outlined"
+              color="warning"
+              onClick={handleManualArcaConfirm}
+              startIcon={<CheckCheck size={16} />}
+              sx={{ borderRadius: 2.5, fontWeight: 800, textTransform: 'none' }}
+            >
+              Confirmar manualmente (imprimir sin factura)
+            </Button>
+          </Box>
+        )}
+
         <Box
           sx={{
             display: 'inline-flex',
@@ -1647,7 +1670,7 @@ export const POSPaymentModal: React.FC<POSPaymentModalProps> = ({ onPrintTicket 
           }}
         >
           {isAwaitingArca
-            ? `Aguardando ARCA (${arcaTimeoutSeconds}s)`
+            ? 'Aguardando factura ARCA...'
             : completedSale?.fiscalInvoice?.cae
             ? 'Imprimir factura (Enter)'
             : 'Imprimir ticket no fiscal (Enter)'}
